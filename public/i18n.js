@@ -198,6 +198,10 @@
     'notice.pkIncoming': '⚔️ {name} 用「{game}」向你发起 PK！去游戏区应战吧', 'notice.pkResult': '⚔️ PK 结果：「{game}」你 {mine} : {theirs} {name} — {result}', 'notice.pkDeclined': '{name} 拒绝了你的「{game}」PK',
     'err.pk_bad_opponent': '请选择另一位成员做对手', 'err.pk_too_many': '你已经有太多未完成的 PK，等对方应战吧', 'err.pk_need_quiz': '题库至少要有 3 题才可以问答对决', 'err.pk_closed': '这场 PK 已经结束',
     'ad.enPh': '英文版本（可留空，给看不懂中文的朋友）',
+    'push.title': '🔔 手机通知', 'push.askTitle': '开启通知？', 'push.askText': '主持人发公告的时候，你的手机会马上收到通知，不会错过活动消息 📢', 'push.later': '以后再说', 'push.turnOn': '开启通知', 'push.turnOff': '关闭通知',
+    'push.on': '通知已开启 🔔 有新公告会马上通知你', 'push.off': '已关闭通知', 'push.fail': '开启失败，请稍后再试', 'push.cardOn': '已开启：有新公告会发通知到这台手机。', 'push.cardOff': '开启后，主持人发公告时这台手机会收到通知。',
+    'push.st.ios': 'iPhone 要先把小镇加到主画面才能收通知：\n① 用 Safari 打开小镇 → ② 点下方「分享」⬆️ → ③「加入主画面」→ ④ 从主画面打开小镇，再到「我的」开启通知。', 'push.st.none': '这个浏览器不支持通知，请用 Chrome 或 Safari 打开。', 'push.st.denied': '通知被挡住了。请到手机的「设置 → 通知」或浏览器的网站设置里，允许 LP 258 发通知。',
+    'ad.pushed': '已通知 {n} 台手机 🔔', 'ad.pushInfo': '{n} / {total} 位成员开启了手机通知，发公告时会收到推送。', 'ad.pushTestBtn': '发测试通知', 'ad.pushTest': '测试通知已发到 {n} 台手机', 'ad.pushOnHint': '已开启手机通知',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 主持人后台', 'ad.only': '只限主持人 / 管理员登录', 'ad.pwPh': '管理员密码', 'ad.login': '登录',
     'ad.pwHint': '第一次启动时，密码会保存在服务器的 data/admin-password.txt。', 'ad.toTown': '🏡 去小镇', 'ad.refresh': '🔄 刷新', 'ad.logout': '退出',
@@ -436,6 +440,10 @@
     'notice.pkIncoming': '⚔️ {name} challenged you to {game}! Go to the Game Zone to accept', 'notice.pkResult': '⚔️ PK result — {game}: you {mine} : {theirs} {name} — {result}', 'notice.pkDeclined': '{name} declined your {game} PK',
     'err.pk_bad_opponent': 'Please choose another member', 'err.pk_too_many': 'You have too many open PKs — wait for them to play', 'err.pk_need_quiz': 'The quiz needs at least 3 questions for a duel', 'err.pk_closed': 'This PK is already over',
     'ad.enPh': 'English version (optional — for friends who don’t read Chinese)',
+    'push.title': '🔔 Phone notifications', 'push.askTitle': 'Turn on notifications?', 'push.askText': 'When the host posts an announcement, your phone gets a notification right away — never miss an event 📢', 'push.later': 'Maybe later', 'push.turnOn': 'Turn on', 'push.turnOff': 'Turn off',
+    'push.on': 'Notifications on 🔔 You’ll hear about new announcements right away', 'push.off': 'Notifications turned off', 'push.fail': 'Couldn’t turn on notifications — please try again later', 'push.cardOn': 'On: new announcements are sent to this phone.', 'push.cardOff': 'Turn on to get a notification on this phone when the host posts an announcement.',
+    'push.st.ios': 'On iPhone, add the town to your Home Screen first:\n① Open the town in Safari → ② tap Share ⬆️ → ③ “Add to Home Screen” → ④ open the town from the Home Screen and turn on notifications under “Me”.', 'push.st.none': 'This browser doesn’t support notifications — please use Chrome or Safari.', 'push.st.denied': 'Notifications are blocked. Allow LP 258 in your phone’s Settings → Notifications, or in the browser’s site settings.',
+    'ad.pushed': '{n} phones notified 🔔', 'ad.pushInfo': '{n} / {total} members turned on phone notifications and get a push for each announcement.', 'ad.pushTestBtn': 'Send test notification', 'ad.pushTest': 'Test notification sent to {n} phones', 'ad.pushOnHint': 'Phone notifications on',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 Host Backend', 'ad.only': 'Hosts / admins only', 'ad.pwPh': 'Admin password', 'ad.login': 'Sign in',
     'ad.pwHint': "On first start, the password is saved on the server in data/admin-password.txt.", 'ad.toTown': '🏡 Open town', 'ad.refresh': '🔄 Refresh', 'ad.logout': 'Sign out',

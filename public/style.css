@@ -375,3 +375,9 @@ select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; bo
 
 /* keep the chat bar (and its emoji picker) above open panels */
 .bottom { z-index: 11; }
+
+/* notification prompt */
+.push-ask { text-align: center; }
+.push-ask .push-bell { font-size: 54px; animation: bell 1.6s ease-in-out infinite; transform-origin: 50% 10%; }
+.push-ask .dlg-acts { justify-content: center; }
+@keyframes bell { 0%, 60%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-14deg); } }

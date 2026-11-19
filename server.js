@@ -93,6 +93,7 @@ function seedDb() {
     attendance: {},
     polls: [],
     pinRequests: [],
+    push: [],
     trash: [],
     quiz: [
       { id: uid(4), question: '地球上最大的海洋是？', options: ['大西洋', '太平洋', '印度洋', '北冰洋'], answer: 1, points: 10 },
@@ -1087,11 +1088,12 @@ route('POST /api/admin/login', async (req, res, body) => {
 
 route('GET /api/admin/overview', async (req, res) => {
   needAdmin(req);
+  const pushIds = new Set(db.push.map((p) => p.uid));
   const users = Object.values(db.users).map((u) => ({
     id: u.id, nickname: u.nickname, avatar: u.avatar, status: u.status || '', points: u.points, banned: !!u.banned, room: u.room || null,
     hasPin: !!u.pinHash, hasRecovery: !!(u.recovery && u.recovery.hash), duplicate: findByNick(u.nickname, u.id).length > 0,
     signedIn: hasSignedIn(u), firstLoginAt: u.firstLoginAt || (u.createdByAdmin ? null : u.createdAt), createdByAdmin: !!u.createdByAdmin,
-    createdAt: u.createdAt, lastSeen: online.has(u.id) ? now() : u.lastSeen, online: online.has(u.id),
+    createdAt: u.createdAt, lastSeen: online.has(u.id) ? now() : u.lastSeen, online: online.has(u.id), push: pushIds.has(u.id),
   })).sort((a, b) => b.points - a.points);
   const name = (id) => (db.users[id] ? db.users[id].nickname : '—');
   json(res, 200, {
@@ -1295,6 +1297,7 @@ route('POST /api/admin/user/merge', async (req, res, body) => {
     delete a[from.id];
   }
   for (const sub of db.submissions) if (sub.userId === from.id) sub.userId = into.id;
+  for (const p of db.push) if (p.uid === from.id) p.uid = into.id;
   for (const p of db.polls) if (p.votes && p.votes[from.id] !== undefined) { if (p.votes[into.id] === undefined) p.votes[into.id] = p.votes[from.id]; delete p.votes[from.id]; }
   if (!into.room && from.room) into.room = from.room;
   if (!into.pinHash && from.pinHash) { into.pinHash = from.pinHash; into.pinSalt = from.pinSalt; }
@@ -1316,6 +1319,7 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
   tokens.delete(u.token);
   archive(db, 'users', { id: u.id, nickname: u.nickname, status: u.status || '', points: u.points, avatar: u.avatar, room: u.room || null, createdAt: u.createdAt, lastSeen: u.lastSeen });
   delete db.users[u.id];
+  db.push = db.push.filter((p) => p.uid !== u.id);
   delete db.solved[u.id];
   delete db.minigame[u.id];
   for (const tb of Object.values(db.games || {})) delete tb[u.id];
@@ -1325,6 +1329,103 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
   save();
   boardsChanged();
   json(res, 200, { ok: true });
+});
+
+// ---------------------------------------------------------------- phone notifications (Web Push)
+// Standard Web Push (RFC 8291 payload encryption + RFC 8292 VAPID), done with Node's own crypto — no packages.
+// The server's key pair is made once and kept in the saved data, so phones stay subscribed across restarts.
+const PUSH_HOSTS = [/(^|\.)fcm\.googleapis\.com$/, /(^|\.)android\.googleapis\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /(^|\.)notify\.windows\.com$/, /(^|\.)push\.apple\.com$/];
+const b64u = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (str) => Buffer.from(String(str).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+function vapid() {
+  if (!db.meta.vapid) {
+    const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    db.meta.vapid = privateKey.export({ format: 'jwk' });
+    save();
+  }
+  const jwk = db.meta.vapid;
+  return { key: crypto.createPrivateKey({ key: jwk, format: 'jwk' }), pub: b64u(Buffer.concat([Buffer.from([4]), unb64u(jwk.x), unb64u(jwk.y)])) };
+}
+function pushEndpointOk(ep) {
+  try { const u = new URL(ep); return u.protocol === 'https:' && PUSH_HOSTS.some((r) => r.test(u.hostname)); } catch { return false; }
+}
+const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+function encryptPush(sub, payload) {
+  const uaPub = unb64u(sub.p256dh), auth = unb64u(sub.auth);
+  const ecdh = crypto.createECDH('prime256v1');
+  const asPub = ecdh.generateKeys();
+  const shared = ecdh.computeSecret(uaPub);
+  const ikm = hmac(hmac(auth, shared), Buffer.concat([Buffer.from('WebPush: info\0'), uaPub, asPub, Buffer.from([1])]));
+  const salt = crypto.randomBytes(16);
+  const prk = hmac(salt, ikm);
+  const cek = hmac(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01', 'binary')).subarray(0, 16);
+  const nonce = hmac(prk, Buffer.from('Content-Encoding: nonce\0\x01', 'binary')).subarray(0, 12);
+  const c = crypto.createCipheriv('aes-128-gcm', cek, nonce);
+  const body = Buffer.concat([c.update(Buffer.concat([Buffer.from(payload), Buffer.from([2])])), c.final(), c.getAuthTag()]);
+  const rs = Buffer.alloc(4); rs.writeUInt32BE(4096);
+  return Buffer.concat([salt, rs, Buffer.from([asPub.length]), asPub, body]);
+}
+function vapidHeader(endpoint) {
+  const { key, pub } = vapid();
+  const head = b64u(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const claims = b64u(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(now() / 1000) + 12 * 3600, sub: process.env.PUBLIC_URL || 'https://lp258-town.onrender.com' }));
+  const sig = crypto.sign('sha256', Buffer.from(head + '.' + claims), { key, dsaEncoding: 'ieee-p1363' });
+  return `vapid t=${head}.${claims}.${b64u(sig)}, k=${pub}`;
+}
+async function pushOne(sub, msg) {
+  const r = await fetch(sub.endpoint, {
+    method: 'POST',
+    headers: { TTL: '86400', Urgency: 'high', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapidHeader(sub.endpoint) },
+    body: encryptPush(sub, JSON.stringify(msg)),
+    signal: AbortSignal.timeout(10000),
+  });
+  return r.status;
+}
+// Sends to every subscribed phone of signed-in, non-banned members. Dead subscriptions are dropped.
+async function pushAll(msg, onlyIds) {
+  const subs = db.push.filter((p) => { const u = db.users[p.uid]; return u && !u.banned && (!onlyIds || onlyIds.includes(u.id)); });
+  let sent = 0;
+  const dead = new Set();
+  await Promise.all(subs.map(async (p) => {
+    try {
+      const st = await pushOne(p, msg);
+      if (st >= 200 && st < 300) sent++;
+      else if (st === 404 || st === 410) dead.add(p.endpoint);
+      else console.warn('push rejected', st, new URL(p.endpoint).hostname);
+    } catch {}
+  }));
+  if (dead.size) { db.push = db.push.filter((p) => !dead.has(p.endpoint)); save(); }
+  return sent;
+}
+
+route('GET /api/push/key', async (req, res) => json(res, 200, { key: vapid().pub }));
+
+route('POST /api/push/subscribe', async (req, res, body) => {
+  const u = needUser(req);
+  const sub = body.sub || {};
+  const endpoint = str(sub.endpoint, 1000);
+  const p256dh = str(sub.keys && sub.keys.p256dh, 200), auth = str(sub.keys && sub.keys.auth, 100);
+  if (!pushEndpointOk(endpoint) || unb64u(p256dh).length !== 65 || unb64u(auth).length !== 16) throw httpErr(400, 'bad_request');
+  rate(rateBag(u.id), 'push', 1000);
+  db.push = db.push.filter((p) => p.endpoint !== endpoint);
+  db.push.push({ uid: u.id, endpoint, p256dh, auth, at: now() });
+  const mine = db.push.filter((p) => p.uid === u.id);
+  if (mine.length > 5) db.push = db.push.filter((p) => p !== mine[0]); // keep the 5 newest devices per member
+  save();
+  json(res, 200, { ok: true });
+});
+
+route('POST /api/push/unsubscribe', async (req, res, body) => {
+  const u = needUser(req);
+  const endpoint = str(body.endpoint, 1000);
+  db.push = db.push.filter((p) => !(p.uid === u.id && p.endpoint === endpoint));
+  save();
+  json(res, 200, { ok: true });
+});
+
+route('POST /api/admin/push/test', async (req, res) => {
+  needAdmin(req);
+  json(res, 200, { sent: await pushAll({ title: '🔔 LP 258', body: '测试通知 · Test notification', tag: 'test' }) });
 });
 
 route('POST /api/admin/announce', async (req, res, body) => {
@@ -1345,7 +1446,9 @@ route('POST /api/admin/announce', async (req, res, body) => {
     broadcast('announce', a);
   }
   save();
-  json(res, 200, { ok: true });
+  let pushed = 0;
+  if (!existing) pushed = await pushAll({ title: '📢 LP 258 公告 · Announcement', body: textEn ? `${text}\n${textEn}` : text, tag: 'announce-' + Date.now() });
+  json(res, 200, { ok: true, pushed });
 });
 
 route('POST /api/admin/announce/delete', async (req, res, body) => {

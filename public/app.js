@@ -292,6 +292,7 @@
     if (!store.get('lp258_tip')) { store.set('lp258_tip', '1'); setTimeout(() => toast(t('tip.move'), 'info', 6500), 800); }
     if (state.me && !state.me.hasPin) setTimeout(() => openPinSetup(true), 1200);
     else if (state.me && !state.me.hasRecovery) setTimeout(() => openRecoverySetup(true), 1500);
+    else setTimeout(pushBoot, 2500);
   }
   function openRecoverySetup(first) {
     const sel = el('select', { class: 'inp' });
@@ -1669,6 +1670,7 @@
             el('p', { class: 'muted', style: 'margin:4px 0 8px' }, me.hasRecovery ? t('rec.cardHas', { q: recQText(me.recoveryQ) }) : t('rec.cardNone')),
             el('button', { class: 'btn small ' + (me.hasRecovery ? '' : 'primary'), onclick: () => openRecoverySetup(!me.hasRecovery) }, me.hasRecovery ? t('rec.changeBtn') : t('rec.setBtn')))),
         installCard(),
+        pushCard(),
         el('div', { class: 'card' }, el('h3', {}, t('music.title')),
           el('div', { class: 'cz-opts' }, [[true, t('music.onLabel')], [false, t('music.offLabel')]].map(([v, label]) => el('button', { class: musicOn === v ? 'on' : '', onclick: () => { musicOn = v; store.set('lp258_music', v ? '1' : '0'); updateSeasonUi(); syncMusic(); renderPanel(); } }, label))),
           el('p', { class: 'muted', style: 'margin:6px 0 0' }, Season.ICON[season()] + ' ' + t('season.info', { name: t('season.' + season()) }))),
@@ -1679,7 +1681,7 @@
           el('p', { class: 'muted', style: 'margin:0 0 6px' }, t('me.codeHint')),
           code,
           el('button', { class: 'btn small', style: 'margin-top:8px', onclick: () => { navigator.clipboard && navigator.clipboard.writeText(me.code).then(() => toast(t('me.copied'), 'good')); } }, t('me.copy'))),
-        el('button', { class: 'btn ghost small', onclick: async () => { if (await askConfirm(t('me.logoutConfirm'))) logout(); } }, t('me.logout')));
+        el('button', { class: 'btn ghost small', onclick: async () => { if (await askConfirm(t('me.logoutConfirm'))) { if (pushOn) await disablePush(true); store.del('lp258_pushOff'); logout(); } } }, t('me.logout')));
     }
     return wrap;
   }
@@ -1758,6 +1760,67 @@
     return el('div', { class: 'card' }, el('h3', {}, t('install.title')), body);
   }
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+
+  // ---------- phone notifications (host announcements)
+  let pushOn = false;
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const keyBytes = (b) => { const s = atob(b.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+  function pushState() {
+    if (!pushSupported()) return isIOS() && !isStandalone() ? 'ios' : 'none';
+    if (Notification.permission === 'denied') return 'denied';
+    return pushOn ? 'on' : 'off';
+  }
+  async function pushSubscribe() {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) { const { key } = await api('GET', '/api/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }); }
+    await api('POST', '/api/push/subscribe', { sub: sub.toJSON() });
+    return true;
+  }
+  async function enablePush() {
+    if (!pushSupported()) { toast(t(isIOS() && !isStandalone() ? 'push.st.ios' : 'push.st.none'), 'bad', 7000); return false; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast(t('push.st.denied'), 'bad', 7000); return false; }
+    try { await pushSubscribe(); pushOn = true; store.del('lp258_pushOff'); toast(t('push.on'), 'good'); return true; }
+    catch (e) { toast(t('push.fail'), 'bad'); return false; }
+  }
+  async function disablePush(quiet) {
+    store.set('lp258_pushOff', '1');
+    pushOn = false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) { await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+    } catch {}
+    if (!quiet) toast(t('push.off'), 'info');
+  }
+  // After sign-in: quietly keep this phone subscribed, or ask once in a while.
+  async function pushBoot() {
+    if (store.get('lp258_pushOff') === '1') return;
+    const asked = Number(store.get('lp258_pushAsk') || 0);
+    const askAgain = Date.now() - asked > 3 * 86400000;
+    if (!pushSupported()) { if (isIOS() && !isStandalone() && askAgain) showPushAsk(true); return; }
+    if (Notification.permission === 'granted') { try { await pushSubscribe(); pushOn = true; } catch {} return; }
+    if (Notification.permission === 'default' && askAgain) showPushAsk(false);
+  }
+  function showPushAsk(iosFirst) {
+    store.set('lp258_pushAsk', String(Date.now()));
+    openModal(el('div', { class: 'push-ask' },
+      el('div', { class: 'push-bell' }, '🔔'),
+      el('h3', {}, t('push.askTitle')),
+      el('p', { class: 'muted', style: 'white-space:pre-line' }, iosFirst ? t('push.st.ios') : t('push.askText')),
+      el('div', { class: 'dlg-acts' },
+        el('button', { class: 'btn ghost', onclick: closeModal }, t('push.later')),
+        iosFirst ? null : el('button', { class: 'btn primary', onclick: async () => { closeModal(); await enablePush(); } }, t('push.turnOn')))));
+  }
+  function pushCard() {
+    const st = pushState();
+    let body;
+    if (st === 'on') body = [el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('push.cardOn')), el('button', { class: 'btn small ghost', onclick: async () => { await disablePush(); renderPanel(); } }, t('push.turnOff'))];
+    else if (st === 'off') body = [el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('push.cardOff')), el('button', { class: 'btn small primary', onclick: async () => { await enablePush(); renderPanel(); } }, t('push.turnOn'))];
+    else body = el('p', { class: 'muted', style: 'margin:0;white-space:pre-line' }, t('push.st.' + st));
+    return el('div', { class: 'card' }, el('h3', {}, t('push.title')), body);
+  }
 
   // ============================================================ boot
   (async function boot() {

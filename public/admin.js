@@ -445,7 +445,7 @@
         el('thead', {}, el('tr', {}, ['', 'ad.h.nick', 'ad.h.signIn', 'ad.h.job', 'ad.h.points', 'ad.h.lastSeen', ''].map((h) => el('th', {}, h ? t(h) : '')))),
         el('tbody', {}, list.map((u) => el('tr', { style: u.banned ? 'opacity:.5' : '' },
           el('td', {}, el('img', { class: 'mini-av', src: Avatar.thumb(u.avatar, 34), alt: '' })),
-          el('td', {}, el('b', {}, u.nickname), ' ', !u.hasPin ? el('span', { class: 'tag y', title: t('ad.noPinHint') }, t('ad.noPin')) : null, ' ', u.duplicate ? el('span', { class: 'tag r', title: t('ad.dupHint') }, t('ad.dup')) : null,
+          el('td', {}, el('b', {}, u.nickname), u.push ? el('span', { title: t('ad.pushOnHint') }, ' 🔔') : null, ' ', !u.hasPin ? el('span', { class: 'tag y', title: t('ad.noPinHint') }, t('ad.noPin')) : null, ' ', u.duplicate ? el('span', { class: 'tag r', title: t('ad.dupHint') }, t('ad.dup')) : null,
             u.status ? el('div', { class: 'muted' }, u.status) : null),
           el('td', {}, u.banned ? t('ad.banned') : !u.signedIn ? el('span', { class: 'tag' }, t('ad.neverSignedIn')) : u.online ? t('ad.online') : el('span', { class: 'tag g' }, t('ad.signedInOn', { date: fmt(new Date(u.firstLoginAt || u.createdAt).toISOString()).replace(/\s\S+$/, '') }))),
           el('td', {}, u.room ? jobLabel(u.room.type) : t('ad.noRoom')),
@@ -507,10 +507,13 @@
     const taEn = el('textarea', { class: 'inp en-field', rows: 2, maxLength: 300, placeholder: '🇬🇧 ' + t('ad.enPh'), style: 'margin-top:6px' });
     return el('div', {},
       el('div', { class: 'toolbar' }, el('h2', {}, t('ad.announceTitle'))),
-      el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin-top:0' }, t('ad.announceHint')), ta, taEn,
+      el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin-top:0' }, t('ad.announceHint')),
+        el('p', { class: 'muted', style: 'margin-top:0' }, '🔔 ', t('ad.pushInfo', { n: data.users.filter((u) => u.push).length, total: data.users.length }), ' ',
+          el('button', { class: 'btn small', onclick: async () => { try { const r = await api('POST', '/api/admin/push/test'); toast(t('ad.pushTest', { n: r.sent }), r.sent ? 'good' : 'info', 4000); } catch (e) { toast(e.message, 'bad'); } } }, t('ad.pushTestBtn'))),
+        ta, taEn,
         el('button', { class: 'btn primary', style: 'margin-top:8px', onclick: async () => {
           if (!ta.value.trim()) return;
-          try { await api('POST', '/api/admin/announce', { text: ta.value, textEn: taEn.value }); toast(t('ad.published'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
+          try { const r = await api('POST', '/api/admin/announce', { text: ta.value, textEn: taEn.value }); toast(t('ad.published') + (r.pushed ? ' · ' + t('ad.pushed', { n: r.pushed }) : ''), 'good', 4000); load(); } catch (e) { toast(e.message, 'bad'); }
         } }, t('ad.publish'))),
       data.announcements.map((a) => el('div', { class: 'card', style: 'display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap' },
         el('div', { style: 'flex:1;min-width:200px' }, a.text, a.textEn ? el('div', { class: 'muted' }, '🇬🇧 ' + a.textEn) : null, el('div', { class: 'muted' }, fmt(a.createdAt))),
