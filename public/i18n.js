@@ -174,6 +174,15 @@
     'ad.dupFilterHint': '同名的成员排在一起。如果是同一个人，可以按「编辑 → 合并重复账号」，或直接按红色「删除」删掉多余的那个。', 'ad.h.signIn': '登录状态',
     'ad.neverSignedIn': '⏳ 未登录', 'ad.signedInOn': '✅ {date} 起', 'ad.stat.signedIn': '✅ 已登录 / 全部成员',
     'pin.changeBody2': '直接设定一个新的 PIN（就算忘记了旧的也可以）。',
+    'test.banner': '🧪 这是你电脑上的「测试版」，不是正式网站。这里的改动不会影响正式网站。正式网站：lp258-town.onrender.com',
+    'rec.qLabel': '🛟 安全问题（忘记 PIN 时自己重设用）', 'rec.aLabel': '答案（要记得哦）', 'rec.customPh': '写你自己的问题', 'rec.answerPh': '你的答案',
+    'rec.questions': ['你的生日是？（例如 0315）', '你第一间学校的名字是？', '你最喜欢的食物是？', '你小时候的宠物或玩具叫什么？'], 'rec.customOption': '✏️ 自己出题…',
+    'rec.selfHint': '回答你的安全问题，就可以自己设定新的 PIN：', 'rec.newPin': '新 PIN（4 位数字）', 'rec.submit': '重设 PIN 并登录 →',
+    'rec.askHostLink': '连答案也忘记了？请主持人帮忙', 'rec.noQuestion': '这个账号还没设定安全问题，请留下联络方式，主持人会帮你重设。',
+    'rec.done': '欢迎回来，{name}！新的 PIN 已设定 ✅', 'rec.setTitle': '设定安全问题', 'rec.setBody': '以后忘记 PIN，回答这个问题就能自己重设，不用找主持人。',
+    'rec.save': '保存', 'rec.saved': '安全问题已保存 🛟', 'rec.cardTitle': '🛟 安全问题', 'rec.cardHas': '已设定：「{q}」。忘记 PIN 时在登录页按「忘记 PIN？」回答就可以。',
+    'rec.cardNone': '还没设定。设好之后，忘记 PIN 也能自己重设。', 'rec.changeBtn': '修改安全问题', 'rec.setBtn': '设定安全问题',
+    'err.rec_q_required': '请选择或写一个安全问题', 'err.rec_a_short': '答案至少 2 个字', 'err.rec_none': '这个账号还没设定安全问题', 'err.rec_wrong': '答案不对，再想想 🤔',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 主持人后台', 'ad.only': '只限主持人 / 管理员登录', 'ad.pwPh': '管理员密码', 'ad.login': '登录',
     'ad.pwHint': '第一次启动时，密码会保存在服务器的 data/admin-password.txt。', 'ad.toTown': '🏡 去小镇', 'ad.refresh': '🔄 刷新', 'ad.logout': '退出',
@@ -388,6 +397,15 @@
     'ad.dupFilterHint': 'Members with the same name are listed together. If it is the same person, use "Edit → Merge duplicate account", or press the red "Delete" on the extra one.', 'ad.h.signIn': 'Sign-in',
     'ad.neverSignedIn': '⏳ Not yet', 'ad.signedInOn': '✅ since {date}', 'ad.stat.signedIn': '✅ Signed in / all members',
     'pin.changeBody2': 'Just choose a new PIN (works even if you forgot the old one).',
+    'test.banner': '🧪 This is the TEST copy on your computer, not the live site. Changes here do not affect the live site. Live site: lp258-town.onrender.com',
+    'rec.qLabel': '🛟 Security question (to reset your PIN yourself)', 'rec.aLabel': 'Answer (remember it!)', 'rec.customPh': 'Write your own question', 'rec.answerPh': 'Your answer',
+    'rec.questions': ['Your birthday? (e.g. 0315)', 'Name of your first school?', 'Your favourite food?', 'Name of a childhood pet or toy?'], 'rec.customOption': '✏️ My own question…',
+    'rec.selfHint': 'Answer your security question to set a new PIN yourself:', 'rec.newPin': 'New PIN (4 digits)', 'rec.submit': 'Reset PIN and sign in →',
+    'rec.askHostLink': 'Forgot the answer too? Ask the host', 'rec.noQuestion': 'This account has no security question yet — leave a way to reach you and the host will reset your PIN.',
+    'rec.done': 'Welcome back, {name}! Your new PIN is set ✅', 'rec.setTitle': 'Set a security question', 'rec.setBody': 'If you ever forget your PIN, answer this to reset it yourself — no need to ask the host.',
+    'rec.save': 'Save', 'rec.saved': 'Security question saved 🛟', 'rec.cardTitle': '🛟 Security question', 'rec.cardHas': 'Set: "{q}". If you forget your PIN, tap "Forgot PIN?" on the sign-in page and answer it.',
+    'rec.cardNone': 'Not set yet. Set one so you can reset a forgotten PIN yourself.', 'rec.changeBtn': 'Change question', 'rec.setBtn': 'Set security question',
+    'err.rec_q_required': 'Please choose or write a security question', 'err.rec_a_short': 'The answer needs at least 2 characters', 'err.rec_none': 'This account has no security question yet', 'err.rec_wrong': 'That answer is not right — think again 🤔',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 Host Backend', 'ad.only': 'Hosts / admins only', 'ad.pwPh': 'Admin password', 'ad.login': 'Sign in',
     'ad.pwHint': "On first start, the password is saved on the server in data/admin-password.txt.", 'ad.toTown': '🏡 Open town', 'ad.refresh': '🔄 Refresh', 'ad.logout': 'Sign out',
@@ -448,4 +466,19 @@
   }
   const locale = () => (lang === 'zh' ? 'zh-CN' : 'en-GB');
   window.I18N = { t, setLang, apply, locale, get lang() { return lang; }, dicts: DICTS };
+})();
+
+// Show an unmissable banner when running the local test copy, so it is never confused with the live site.
+(function () {
+  const h = location.hostname;
+  if (!(h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.localhost'))) return;
+  const show = () => {
+    if (document.getElementById('testBanner')) return;
+    const b = document.createElement('div');
+    b.id = 'testBanner';
+    b.textContent = window.I18N.t('test.banner');
+    document.body.appendChild(b);
+    document.title = '🧪 ' + document.title;
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
 })();

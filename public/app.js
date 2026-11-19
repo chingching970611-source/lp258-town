@@ -142,8 +142,15 @@
   }
   $('#tabNew').onclick = () => setJoinMode('new');
   $('#tabLogin').onclick = () => setJoinMode('login');
+  const recQText = (q) => (typeof q === 'number' ? (t('rec.questions')[q] || '') : String(q || ''));
+  function fillQuestionSelect(sel, custom) {
+    sel.replaceChildren(...t('rec.questions').map((q, i) => el('option', { value: String(i) }, q)), el('option', { value: 'custom' }, t('rec.customOption')));
+    sel.onchange = () => { custom.classList.toggle('hidden', sel.value !== 'custom'); if (sel.value === 'custom') custom.focus(); };
+  }
+  const readQuestion = (sel, custom) => (sel.value === 'custom' ? custom.value.trim() : Number(sel.value));
+  fillQuestionSelect($('#joinRecQ'), $('#joinRecCustom'));
   const digitsOnly = (inp) => { inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); }); };
-  digitsOnly($('#joinPin')); digitsOnly($('#loginPin'));
+  digitsOnly($('#joinPin')); digitsOnly($('#loginPin')); digitsOnly($('#recNewPin'));
   function signedIn(r) {
     state.token = r.token;
     store.set('lp258_token', r.token); // remembered on this phone/browser, so no need to sign in again
@@ -157,9 +164,13 @@
     $('#joinErr').textContent = '';
     if (!nickname) { $('#joinErr').textContent = t('join.needNick'); return; }
     if (!/^\d{4}$/.test(pin)) { $('#joinErr').textContent = t('err.pin_format'); $('#joinPin').focus(); return; }
+    const recQ = readQuestion($('#joinRecQ'), $('#joinRecCustom'));
+    const recA = $('#joinRecA').value.trim();
+    if (recQ === '') { $('#joinErr').textContent = t('err.rec_q_required'); $('#joinRecCustom').focus(); return; }
+    if (recA.length < 2) { $('#joinErr').textContent = t('err.rec_a_short'); $('#joinRecA').focus(); return; }
     $('#joinBtn').disabled = true;
     try {
-      const r = await api('POST', '/api/join', { nickname, avatar: joinAv, pin });
+      const r = await api('POST', '/api/join', { nickname, avatar: joinAv, pin, recQ, recA });
       signedIn(r);
       toast(t('join.welcome'), 'good', 5000);
       setTimeout(openRoomWelcome, 900);
@@ -192,7 +203,35 @@
     $('#loginBtn').disabled = false;
   }
   $('#loginBtn').onclick = doLogin;
-  $('#forgotBtn').onclick = () => { $('#forgotForm').classList.toggle('hidden'); $('#forgotContact').focus(); };
+  const showHostBox = () => { $('#recoverBox').classList.add('hidden'); $('#hostBox').classList.remove('hidden'); $('#forgotContact').focus(); };
+  $('#forgotBtn').onclick = async () => {
+    const nickname = $('#loginName').value.trim();
+    $('#joinErr').textContent = '';
+    if (!nickname) { $('#joinErr').textContent = t('join.forgotNeedNick'); $('#loginName').focus(); return; }
+    try {
+      const r = await api('POST', '/api/pin/question', { nickname });
+      $('#forgotForm').classList.remove('hidden');
+      if (r.hasQuestion) {
+        $('#hostBox').classList.add('hidden');
+        $('#recoverBox').classList.remove('hidden');
+        $('#recQText').textContent = '❓ ' + recQText(r.q);
+        $('#recAnswer').value = ''; $('#recNewPin').value = '';
+        $('#recAnswer').focus();
+      } else { showHostBox(); $('#joinErr').textContent = t('rec.noQuestion'); }
+    } catch (e) { $('#joinErr').textContent = e.message; }
+  };
+  $('#recAskHost').onclick = showHostBox;
+  $('#recSubmit').onclick = async () => {
+    const nickname = $('#loginName').value.trim(), answer = $('#recAnswer').value.trim(), pin = $('#recNewPin').value.trim();
+    $('#joinErr').textContent = '';
+    if (!answer) { $('#joinErr').textContent = t('err.rec_a_short'); $('#recAnswer').focus(); return; }
+    if (!/^\d{4}$/.test(pin)) { $('#joinErr').textContent = t('err.pin_format'); $('#recNewPin').focus(); return; }
+    try {
+      const r = await api('POST', '/api/pin/recover', { nickname, answer, pin });
+      signedIn(r);
+      toast(t('rec.done', { name: r.user.nickname }), 'good', 6000);
+    } catch (e) { $('#joinErr').textContent = e.message; $('#recAnswer').select(); }
+  };
   $('#forgotSend').onclick = async () => {
     const nickname = $('#loginName').value.trim();
     $('#joinErr').textContent = '';
@@ -250,6 +289,34 @@
     if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
     if (!store.get('lp258_tip')) { store.set('lp258_tip', '1'); setTimeout(() => toast(t('tip.move'), 'info', 6500), 800); }
     if (state.me && !state.me.hasPin) setTimeout(() => openPinSetup(true), 1200);
+    else if (state.me && !state.me.hasRecovery) setTimeout(() => openRecoverySetup(true), 1500);
+  }
+  function openRecoverySetup(first) {
+    const sel = el('select', { class: 'inp' });
+    const custom = el('input', { class: 'inp hidden', maxLength: 60, placeholder: t('rec.customPh') });
+    fillQuestionSelect(sel, custom);
+    if (state.me.recoveryQ !== null && state.me.recoveryQ !== undefined) {
+      if (typeof state.me.recoveryQ === 'number') sel.value = String(state.me.recoveryQ);
+      else { sel.value = 'custom'; custom.value = state.me.recoveryQ; custom.classList.remove('hidden'); }
+    }
+    const ans = el('input', { class: 'inp', maxLength: 60, placeholder: t('rec.answerPh'), autocomplete: 'off' });
+    const err = el('p', { class: 'err' });
+    openModal(el('div', { class: 'room-view' },
+      el('div', { style: 'font-size:42px;text-align:center' }, '🛟'),
+      el('h3', { style: 'text-align:center' }, t('rec.setTitle')),
+      el('p', { class: 'muted', style: 'text-align:center' }, t('rec.setBody')),
+      el('label', { class: 'field' }, el('span', {}, t('rec.qLabel')), sel), custom,
+      el('label', { class: 'field' }, el('span', {}, t('rec.aLabel')), ans),
+      err,
+      el('div', { style: 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap' },
+        el('button', { class: 'btn ghost', onclick: closeModal }, first ? t('room.later') : t('dlg.cancel')),
+        el('button', { class: 'btn primary', onclick: async () => {
+          const q = readQuestion(sel, custom);
+          if (q === '') { err.textContent = t('err.rec_q_required'); return; }
+          if (ans.value.trim().length < 2) { err.textContent = t('err.rec_a_short'); return; }
+          try { const r = await api('POST', '/api/recovery', { q, a: ans.value }); state.me = r.user; closeModal(); toast(t('rec.saved'), 'good', 5000); if (currentPanel === 'me') renderPanel(); }
+          catch (e) { err.textContent = e.message; }
+        } }, t('rec.save')))));
   }
   function openPinSetup(first) {
     const p1 = el('input', { class: 'inp pin-input', type: 'password', inputmode: 'numeric', maxLength: 4, placeholder: '••••', autocomplete: 'new-password' });
@@ -274,6 +341,7 @@
             const r = await api('POST', '/api/pin', { pin: p1.value, oldPin: old ? old.value : undefined });
             state.me = r.user; closeModal(); toast(t('pin.saved'), 'good', 5000);
             if (currentPanel === 'me') renderPanel();
+            if (!state.me.hasRecovery) setTimeout(() => openRecoverySetup(true), 400);
           } catch (e) { err.textContent = e.message; }
         } }, t('pin.save')))));
   }
@@ -1404,7 +1472,11 @@
       wrap.append(
         el('div', { class: 'card' }, el('h3', {}, t('pin.cardTitle')),
           el('p', { class: 'muted', style: 'margin:0 0 8px' }, me.hasPin ? t('pin.cardHasPin', { name: me.nickname }) : t('pin.cardNoPin')),
-          el('button', { class: 'btn small ' + (me.hasPin ? '' : 'primary'), onclick: () => openPinSetup(!me.hasPin) }, me.hasPin ? t('pin.changeBtn') : t('pin.setBtn'))),
+          el('button', { class: 'btn small ' + (me.hasPin ? '' : 'primary'), onclick: () => openPinSetup(!me.hasPin) }, me.hasPin ? t('pin.changeBtn') : t('pin.setBtn')),
+          el('div', { style: 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line)' },
+            el('b', {}, t('rec.cardTitle')),
+            el('p', { class: 'muted', style: 'margin:4px 0 8px' }, me.hasRecovery ? t('rec.cardHas', { q: recQText(me.recoveryQ) }) : t('rec.cardNone')),
+            el('button', { class: 'btn small ' + (me.hasRecovery ? '' : 'primary'), onclick: () => openRecoverySetup(!me.hasRecovery) }, me.hasRecovery ? t('rec.changeBtn') : t('rec.setBtn')))),
         installCard(),
         el('div', { class: 'card' }, el('h3', {}, t('music.title')),
           el('div', { class: 'cz-opts' }, [[true, t('music.onLabel')], [false, t('music.offLabel')]].map(([v, label]) => el('button', { class: musicOn === v ? 'on' : '', onclick: () => { musicOn = v; store.set('lp258_music', v ? '1' : '0'); updateSeasonUi(); syncMusic(); renderPanel(); } }, label))),

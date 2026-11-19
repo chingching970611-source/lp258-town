@@ -304,3 +304,13 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .pin-show { font-family: ui-monospace, Consolas, monospace; font-weight: 800; font-size: 18px; letter-spacing: .2em; background: #FFF3C4; padding: 2px 8px; border-radius: 8px; }
 .pin-input::placeholder { letter-spacing: normal; font-size: 13px; font-weight: 600; }
 .pin-input[placeholder="••••"]::placeholder { letter-spacing: .5em; font-size: 20px; }
+
+/* ---------- local test copy banner ---------- */
+#testBanner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 200; background: repeating-linear-gradient(45deg, #FFD43B, #FFD43B 14px, #FFC107 14px, #FFC107 28px);
+  color: #3A2E3F; font-weight: 800; font-size: 13px; text-align: center; padding: 4px 10px; pointer-events: none; box-shadow: 0 -2px 8px rgba(0,0,0,.15); }
+
+/* ---------- security question ---------- */
+.rec-fields { background: #F4F7FF; border-radius: 14px; padding: 2px 12px 4px; margin-bottom: 12px; }
+.rec-fields .field { margin: 10px 0; }
+.rec-q { font-weight: 800; margin: 4px 0; }
+select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; border-radius: 14px; padding: 9px 12px; }

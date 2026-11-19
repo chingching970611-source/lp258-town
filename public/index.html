@@ -40,6 +40,11 @@
           <label class="field"><span data-i18n="join.pinNew"></span><input id="joinPin" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="new-password"></label>
         </div>
         <p class="muted pin-hint" data-i18n="join.pinHint"></p>
+        <div class="rec-fields">
+          <label class="field"><span data-i18n="rec.qLabel"></span><select id="joinRecQ" class="inp"></select></label>
+          <input id="joinRecCustom" class="inp hidden" maxlength="60" data-i18n-ph="rec.customPh">
+          <label class="field"><span data-i18n="rec.aLabel"></span><input id="joinRecA" class="inp" maxlength="60" data-i18n-ph="rec.answerPh" autocomplete="off"></label>
+        </div>
         <button class="btn primary big" id="joinBtn" data-i18n="join.enter"></button>
       </div>
       <!-- returning member on a new phone / browser -->
@@ -50,9 +55,19 @@
         <button class="btn primary big" id="loginBtn" data-i18n="join.loginBtn"></button>
         <button type="button" class="link-btn" id="forgotBtn" data-i18n="join.forgotBtn"></button>
         <div id="forgotForm" class="forgot-box hidden">
-          <p class="muted" data-i18n="join.forgotHint"></p>
-          <input id="forgotContact" class="inp" maxlength="80" data-i18n-ph="join.forgotContactPh" autocomplete="tel">
-          <button type="button" class="btn small" id="forgotSend" data-i18n="join.forgotSend"></button>
+          <div id="recoverBox" class="hidden">
+            <p class="muted" data-i18n="rec.selfHint"></p>
+            <p class="rec-q" id="recQText"></p>
+            <input id="recAnswer" class="inp" maxlength="60" data-i18n-ph="rec.answerPh" autocomplete="off">
+            <label class="field" style="margin:6px 0 0"><span data-i18n="rec.newPin"></span><input id="recNewPin" class="inp pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="new-password"></label>
+            <button type="button" class="btn primary" id="recSubmit" data-i18n="rec.submit"></button>
+            <button type="button" class="link-btn" id="recAskHost" data-i18n="rec.askHostLink"></button>
+          </div>
+          <div id="hostBox" class="hidden">
+            <p class="muted" data-i18n="join.forgotHint"></p>
+            <input id="forgotContact" class="inp" maxlength="80" data-i18n-ph="join.forgotContactPh" autocomplete="tel">
+            <button type="button" class="btn small" id="forgotSend" data-i18n="join.forgotSend"></button>
+          </div>
         </div>
         <details class="code-login">
           <summary data-i18n="join.haveCode"></summary>

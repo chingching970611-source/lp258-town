@@ -287,7 +287,7 @@ function cleanAvatar(a) {
   return o;
 }
 const publicUser = (u) => ({ id: u.id, nickname: u.nickname, avatar: u.avatar, status: u.status || '', points: u.points, room: u.room || null });
-const selfUser = (u) => ({ ...publicUser(u), code: u.token, hasPin: !!u.pinHash });
+const selfUser = (u) => ({ ...publicUser(u), code: u.token, hasPin: !!u.pinHash, hasRecovery: !!(u.recovery && u.recovery.hash), recoveryQ: u.recovery ? u.recovery.q : null });
 
 // ---------------------------------------------------------------- nickname + PIN accounts
 const nickKey = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -302,8 +302,20 @@ const hasSignedIn = (u) => !!u.firstLoginAt || !u.createdByAdmin;
 const randomPin = () => String(crypto.randomInt(0, 10000)).padStart(4, '0');
 const pinOk = (u, pin) => !!u.pinHash && sameStr(hashPw(pin, u.pinSalt), u.pinHash);
 // Only failed attempts count, so a whole group signing in on the same event WiFi isn't blocked.
+// Security question for self-service PIN reset. q is 0-3 (built-in question) or the member's own question text.
+const normAns = (a) => String(a || '').toLowerCase().normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '');
+function cleanRecovery(q, a) {
+  let question;
+  if (typeof q === 'number' || /^[0-3]$/.test(String(q))) question = Number(q);
+  else { question = line(q, 60); if (!question) throw httpErr(400, 'rec_q_required'); }
+  const ans = normAns(a);
+  if (ans.length < 2) throw httpErr(400, 'rec_a_short');
+  const salt = uid(8);
+  return { q: question, salt, hash: hashPw(ans, salt) };
+}
+const recoveryOk = (u, a) => !!(u.recovery && u.recovery.hash) && sameStr(hashPw(normAns(a), u.recovery.salt), u.recovery.hash);
 const pinAttempts = new Map(); // key (ip or user) -> [timestamps of failures]
-const PIN_LIMITS = { ip: 30, u: 8, forgot: 20 }; // per 10 minutes
+const PIN_LIMITS = { ip: 30, u: 8, forgot: 20, rec: 5, recip: 20 }; // per 10 minutes (rec: per account)
 const recent = (key) => (pinAttempts.get(key) || []).filter((t) => now() - t < 10 * 60000);
 function pinBlocked(key) { if (recent(key).length >= PIN_LIMITS[key.split(':')[0]]) throw httpErr(429, 'too_many_attempts'); }
 function pinFail(key) { const list = recent(key); list.push(now()); pinAttempts.set(key, list); }
@@ -543,8 +555,10 @@ route('POST /api/join', async (req, res, body) => {
   if (!nickname) throw httpErr(400, 'nick_required');
   const pin = cleanPin(body.pin);
   if (findByNick(nickname).length) throw httpErr(409, 'nick_taken');
+  if (body.recQ !== undefined && body.recQ !== null && body.recQ !== '') cleanRecovery(body.recQ, body.recA);
   const u = { id: uid(6), token: uid(16), nickname, avatar: cleanAvatar(body.avatar), status: '', points: 0, room: null, createdAt: now(), lastSeen: now(), banned: false };
   setPin(u, pin);
+  if (body.recQ !== undefined && body.recQ !== null && body.recQ !== '') u.recovery = cleanRecovery(body.recQ, body.recA);
   u.firstLoginAt = now();
   db.users[u.id] = u;
   tokens.set(u.token, u.id);
@@ -576,7 +590,42 @@ route('POST /api/login', async (req, res, body) => {
   json(res, 200, { token: u.token, user: selfUser(u), firstLogin });
 });
 
-// "Forgot PIN": the member asks the host, who resets it in the backend.
+// Self-service: look up the member's security question, then answer it to set a new PIN.
+route('POST /api/pin/question', async (req, res, body) => {
+  const nickname = line(body.nickname, 16);
+  if (!nickname) throw httpErr(400, 'nick_required');
+  pinBlocked('recip:' + (req.socket.remoteAddress || '?'));
+  const u = findByNick(nickname).find((x) => x.recovery && x.recovery.hash);
+  if (!u) { if (!findByNick(nickname).length) pinFail('recip:' + (req.socket.remoteAddress || '?')); return json(res, 200, { hasQuestion: false }); }
+  json(res, 200, { hasQuestion: true, q: u.recovery.q });
+});
+route('POST /api/pin/recover', async (req, res, body) => {
+  const nickname = line(body.nickname, 16);
+  if (!nickname) throw httpErr(400, 'nick_required');
+  const pin = cleanPin(body.pin);
+  const ipKey = 'recip:' + (req.socket.remoteAddress || '?');
+  pinBlocked(ipKey);
+  const u = findByNick(nickname).find((x) => x.recovery && x.recovery.hash);
+  if (!u) throw httpErr(404, 'rec_none');
+  pinBlocked('rec:' + u.id);
+  if (!recoveryOk(u, body.answer)) { pinFail('rec:' + u.id); pinFail(ipKey); throw httpErr(401, 'rec_wrong'); }
+  if (u.banned) throw httpErr(403, 'banned');
+  setPin(u, pin);
+  pinAttempts.delete('u:' + u.id);
+  pinAttempts.delete('rec:' + u.id);
+  if (!hasSignedIn(u)) u.firstLoginAt = now();
+  for (const r of db.pinRequests) if (!r.done && nickKey(r.nickname) === nickKey(u.nickname)) { r.done = true; r.doneAt = now(); }
+  save();
+  json(res, 200, { token: u.token, user: selfUser(u) });
+});
+route('POST /api/recovery', async (req, res, body) => {
+  const u = needUser(req);
+  u.recovery = cleanRecovery(body.q, body.a);
+  save();
+  json(res, 200, { user: selfUser(u) });
+});
+
+// "Forgot PIN" fallback: the member asks the host, who resets it in the backend.
 route('POST /api/pin/forgot', async (req, res, body) => {
   const nickname = line(body.nickname, 16);
   if (!nickname) throw httpErr(400, 'nick_required');
@@ -839,7 +888,7 @@ route('GET /api/admin/overview', async (req, res) => {
   needAdmin(req);
   const users = Object.values(db.users).map((u) => ({
     id: u.id, nickname: u.nickname, avatar: u.avatar, status: u.status || '', points: u.points, banned: !!u.banned, room: u.room || null,
-    hasPin: !!u.pinHash, duplicate: findByNick(u.nickname, u.id).length > 0,
+    hasPin: !!u.pinHash, hasRecovery: !!(u.recovery && u.recovery.hash), duplicate: findByNick(u.nickname, u.id).length > 0,
     signedIn: hasSignedIn(u), firstLoginAt: u.firstLoginAt || (u.createdByAdmin ? null : u.createdAt), createdByAdmin: !!u.createdByAdmin,
     createdAt: u.createdAt, lastSeen: online.has(u.id) ? now() : u.lastSeen, online: online.has(u.id),
   })).sort((a, b) => b.points - a.points);
