@@ -53,6 +53,7 @@ function seedDb() {
     ],
     attendance: {},
     polls: [],
+    pinRequests: [],
     trash: [],
     quiz: [
       { id: uid(4), question: '地球上最大的海洋是？', options: ['大西洋', '太平洋', '印度洋', '北冰洋'], answer: 1, points: 10 },
@@ -162,6 +163,7 @@ function loadDb() {
     if (!d.meta) d.meta = { v: 1 };
     for (const k of Object.keys(base)) if (d[k] === undefined) d[k] = base[k];
     if (!d.settings.currency) d.settings.currency = 'RM';
+    if (!d.pinRequests) d.pinRequests = [];
     migrate(d);
     return d;
   } catch (e) {
@@ -285,7 +287,27 @@ function cleanAvatar(a) {
   return o;
 }
 const publicUser = (u) => ({ id: u.id, nickname: u.nickname, avatar: u.avatar, status: u.status || '', points: u.points, room: u.room || null });
-const selfUser = (u) => ({ ...publicUser(u), code: u.token });
+const selfUser = (u) => ({ ...publicUser(u), code: u.token, hasPin: !!u.pinHash });
+
+// ---------------------------------------------------------------- nickname + PIN accounts
+const nickKey = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const findByNick = (n, exceptId) => Object.values(db.users).filter((u) => u.id !== exceptId && nickKey(u.nickname) === nickKey(n));
+function cleanPin(p) {
+  const pin = String(p ?? '').trim();
+  if (!/^\d{4}$/.test(pin)) throw httpErr(400, 'pin_format');
+  return pin;
+}
+function setPin(u, pin) { u.pinSalt = uid(8); u.pinHash = hashPw(pin, u.pinSalt); }
+const hasSignedIn = (u) => !!u.firstLoginAt || !u.createdByAdmin;
+const randomPin = () => String(crypto.randomInt(0, 10000)).padStart(4, '0');
+const pinOk = (u, pin) => !!u.pinHash && sameStr(hashPw(pin, u.pinSalt), u.pinHash);
+// Only failed attempts count, so a whole group signing in on the same event WiFi isn't blocked.
+const pinAttempts = new Map(); // key (ip or user) -> [timestamps of failures]
+const PIN_LIMITS = { ip: 30, u: 8, forgot: 20 }; // per 10 minutes
+const recent = (key) => (pinAttempts.get(key) || []).filter((t) => now() - t < 10 * 60000);
+function pinBlocked(key) { if (recent(key).length >= PIN_LIMITS[key.split(':')[0]]) throw httpErr(429, 'too_many_attempts'); }
+function pinFail(key) { const list = recent(key); list.push(now()); pinAttempts.set(key, list); }
+function pinRate(key) { pinBlocked(key); pinFail(key); } // for actions that always count (forgot-PIN requests)
 function presence(u) {
   const o = online.get(u.id);
   return { ...publicUser(u), x: o ? o.x : SPAWN.x, y: o ? o.y : SPAWN.y };
@@ -519,7 +541,11 @@ const route = (sig, fn) => { routes[sig] = fn; };
 route('POST /api/join', async (req, res, body) => {
   const nickname = line(body.nickname, 16);
   if (!nickname) throw httpErr(400, 'nick_required');
+  const pin = cleanPin(body.pin);
+  if (findByNick(nickname).length) throw httpErr(409, 'nick_taken');
   const u = { id: uid(6), token: uid(16), nickname, avatar: cleanAvatar(body.avatar), status: '', points: 0, room: null, createdAt: now(), lastSeen: now(), banned: false };
+  setPin(u, pin);
+  u.firstLoginAt = now();
   db.users[u.id] = u;
   tokens.set(u.token, u.id);
   save();
@@ -527,6 +553,50 @@ route('POST /api/join', async (req, res, body) => {
 });
 
 route('GET /api/me', async (req, res) => json(res, 200, { user: selfUser(needUser(req)) }));
+
+route('POST /api/login', async (req, res, body) => {
+  const nickname = line(body.nickname, 16);
+  if (!nickname) throw httpErr(400, 'nick_required');
+  const pin = cleanPin(body.pin);
+  const ipKey = 'ip:' + (req.socket.remoteAddress || '?');
+  pinBlocked(ipKey);
+  const candidates = findByNick(nickname);
+  if (!candidates.length) { pinFail(ipKey); throw httpErr(404, 'nick_unknown'); }
+  for (const c of candidates) pinBlocked('u:' + c.id);
+  const u = candidates.find((c) => pinOk(c, pin));
+  if (!u) {
+    if (candidates.every((c) => !c.pinHash)) throw httpErr(409, 'no_pin_yet');
+    pinFail(ipKey);
+    for (const c of candidates) pinFail('u:' + c.id);
+    throw httpErr(401, 'wrong_pin');
+  }
+  if (u.banned) throw httpErr(403, 'banned');
+  const firstLogin = !hasSignedIn(u);
+  if (firstLogin) { u.firstLoginAt = now(); save(); }
+  json(res, 200, { token: u.token, user: selfUser(u), firstLogin });
+});
+
+// "Forgot PIN": the member asks the host, who resets it in the backend.
+route('POST /api/pin/forgot', async (req, res, body) => {
+  const nickname = line(body.nickname, 16);
+  if (!nickname) throw httpErr(400, 'nick_required');
+  pinRate('forgot:' + (req.socket.remoteAddress || '?'));
+  const match = findByNick(nickname)[0];
+  const open = db.pinRequests.find((r) => !r.done && nickKey(r.nickname) === nickKey(nickname));
+  if (open) { open.contact = line(body.contact, 80) || open.contact; open.at = now(); }
+  else db.pinRequests.push({ id: uid(4), userId: match ? match.id : null, nickname, contact: line(body.contact, 80), at: now(), done: false });
+  if (db.pinRequests.length > 200) db.pinRequests.splice(0, db.pinRequests.length - 200);
+  save();
+  json(res, 200, { ok: true }); // same answer whether or not the nickname exists
+});
+
+route('POST /api/pin', async (req, res, body) => {
+  const u = needUser(req);
+  const pin = cleanPin(body.pin);
+  setPin(u, pin);
+  save();
+  json(res, 200, { user: selfUser(u) });
+});
 
 route('POST /api/move', async (req, res, body) => {
   const u = needUser(req);
@@ -583,7 +653,12 @@ route('POST /api/poke', async (req, res, body) => {
 
 route('POST /api/profile', async (req, res, body) => {
   const u = needUser(req);
-  if (body.nickname !== undefined) { const n = line(body.nickname, 16); if (!n) throw httpErr(400, 'nick_required'); u.nickname = n; }
+  if (body.nickname !== undefined) {
+    const n = line(body.nickname, 16);
+    if (!n) throw httpErr(400, 'nick_required');
+    if (findByNick(n, u.id).length) throw httpErr(409, 'nick_taken');
+    u.nickname = n;
+  }
   if (body.status !== undefined) u.status = line(body.status, 40);
   if (body.avatar !== undefined) u.avatar = cleanAvatar(body.avatar);
   save();
@@ -764,6 +839,8 @@ route('GET /api/admin/overview', async (req, res) => {
   needAdmin(req);
   const users = Object.values(db.users).map((u) => ({
     id: u.id, nickname: u.nickname, avatar: u.avatar, status: u.status || '', points: u.points, banned: !!u.banned, room: u.room || null,
+    hasPin: !!u.pinHash, duplicate: findByNick(u.nickname, u.id).length > 0,
+    signedIn: hasSignedIn(u), firstLoginAt: u.firstLoginAt || (u.createdByAdmin ? null : u.createdAt), createdByAdmin: !!u.createdByAdmin,
     createdAt: u.createdAt, lastSeen: online.has(u.id) ? now() : u.lastSeen, online: online.has(u.id),
   })).sort((a, b) => b.points - a.points);
   const name = (id) => (db.users[id] ? db.users[id].nickname : '—');
@@ -785,6 +862,7 @@ route('GET /api/admin/overview', async (req, res) => {
     live: live ? { question: live.question, endsAt: live.endsAt, count: live.answers.size } : null,
     lastLive: lastLiveResult,
     passwordFromEnv: !!process.env.ADMIN_PASSWORD,
+    pinRequests: db.pinRequests.filter((r) => !r.done).slice().reverse().map((r) => ({ ...r, exists: !!(r.userId && db.users[r.userId]) || findByNick(r.nickname).length > 0 })),
     settings: db.settings,
   });
 });
@@ -860,8 +938,14 @@ route('POST /api/admin/user', async (req, res, body) => {
   needAdmin(req);
   const u = db.users[body.id];
   if (!u) throw httpErr(404, 'not_found');
-  if (body.nickname !== undefined) { const n = line(body.nickname, 16); if (!n) throw httpErr(400, 'nick_required'); u.nickname = n; }
+  if (body.nickname !== undefined) {
+    const n = line(body.nickname, 16);
+    if (!n) throw httpErr(400, 'nick_required');
+    if (findByNick(n, u.id).length) throw httpErr(409, 'nick_taken');
+    u.nickname = n;
+  }
   if (body.status !== undefined) u.status = line(body.status, 40);
+  if (body.pin) setPin(u, cleanPin(body.pin));
   if (body.points !== undefined) award(u, Math.max(0, Math.round(Number(body.points) || 0)) - u.points, null);
   if (body.banned !== undefined) {
     u.banned = !!body.banned;
@@ -892,6 +976,84 @@ route('POST /api/admin/attendance', async (req, res, body) => {
   }
   save();
   sendTo(body.userId, 'content', { col: 'events' });
+  json(res, 200, { ok: true });
+});
+
+function adminCreateUser(nickname, pin) {
+  const n = line(nickname, 16);
+  if (!n) throw httpErr(400, 'nick_required');
+  if (findByNick(n).length) throw httpErr(409, 'nick_taken');
+  const p = pin ? cleanPin(pin) : randomPin();
+  const r = (k) => Math.floor(Math.random() * k);
+  const u = { id: uid(6), token: uid(16), nickname: n, avatar: cleanAvatar({ skin: r(6), hair: r(10), hairColor: r(9), outfit: r(5), outfitColor: r(10), face: 0, acc: 0 }),
+    status: '', points: 0, room: null, createdAt: now(), lastSeen: null, banned: false, createdByAdmin: true, firstLoginAt: null };
+  setPin(u, p);
+  db.users[u.id] = u;
+  tokens.set(u.token, u.id);
+  return { id: u.id, nickname: n, pin: p };
+}
+route('POST /api/admin/user/create', async (req, res, body) => {
+  needAdmin(req);
+  const names = Array.isArray(body.names) ? body.names : [body.nickname];
+  const results = [];
+  for (const raw of names.slice(0, 200)) {
+    const name = line(raw, 16);
+    if (!name) continue;
+    try { results.push(adminCreateUser(name, names.length === 1 ? body.pin : undefined)); }
+    catch (e) { results.push({ nickname: name, error: e.key || 'bad_request' }); }
+  }
+  save();
+  json(res, 200, { results });
+});
+
+route('POST /api/admin/pinrequest', async (req, res, body) => {
+  needAdmin(req);
+  const r = db.pinRequests.find((x) => x.id === body.id);
+  if (!r) throw httpErr(404, 'not_found');
+  let pin = null;
+  if (body.action === 'reset') {
+    const u = (r.userId && db.users[r.userId]) || findByNick(r.nickname)[0];
+    if (!u) throw httpErr(404, 'nick_unknown');
+    pin = randomPin();
+    setPin(u, pin);
+    pinAttempts.delete('u:' + u.id);
+  }
+  r.done = true;
+  r.doneAt = now();
+  save();
+  json(res, 200, { ok: true, pin });
+});
+
+route('POST /api/admin/user/merge', async (req, res, body) => {
+  needAdmin(req);
+  const from = db.users[body.fromId], into = db.users[body.intoId];
+  if (!from || !into || from.id === into.id) throw httpErr(400, 'bad_request');
+  into.points = (into.points || 0) + (from.points || 0);
+  if ((db.minigame[from.id] || 0) > (db.minigame[into.id] || 0)) db.minigame[into.id] = db.minigame[from.id];
+  delete db.minigame[from.id];
+  const sf = db.solved[from.id], si = solvedOf(into.id);
+  if (sf) {
+    for (const [q, r] of Object.entries(sf.quiz || {})) if (!si.quiz[q] || r === 'correct') si.quiz[q] = r;
+    for (const r of sf.riddles || []) if (!si.riddles.includes(r)) si.riddles.push(r);
+    delete db.solved[from.id];
+  }
+  const rank = { paid: 3, submitted: 2, going: 1, unpaid: 0 };
+  for (const a of Object.values(db.attendance)) {
+    if (!a[from.id]) continue;
+    if (!a[into.id] || rank[a[from.id].status] > rank[a[into.id].status]) a[into.id] = a[from.id];
+    delete a[from.id];
+  }
+  for (const sub of db.submissions) if (sub.userId === from.id) sub.userId = into.id;
+  for (const p of db.polls) if (p.votes && p.votes[from.id] !== undefined) { if (p.votes[into.id] === undefined) p.votes[into.id] = p.votes[from.id]; delete p.votes[from.id]; }
+  if (!into.room && from.room) into.room = from.room;
+  if (!into.pinHash && from.pinHash) { into.pinHash = from.pinHash; into.pinSalt = from.pinSalt; }
+  kick(from.id, 'deleted');
+  tokens.delete(from.token);
+  archive(db, 'users', { id: from.id, nickname: from.nickname, status: from.status || '', points: from.points, avatar: from.avatar, room: from.room || null, createdAt: from.createdAt, lastSeen: from.lastSeen, mergedInto: into.nickname });
+  delete db.users[from.id];
+  save();
+  broadcast('points', { id: into.id, points: into.points });
+  boardsChanged();
   json(res, 200, { ok: true });
 });
 
@@ -1021,6 +1183,7 @@ function handleStream(req, res, url) {
   }
   clearTimeout(o.leaveTimer);
   o.conns.add(res);
+  if (!hasSignedIn(u)) { u.firstLoginAt = now(); save(); }
   u.lastSeen = now();
   send(res, 'init', {
     me: u.id,
@@ -1104,6 +1267,7 @@ const server = http.createServer(async (req, res) => {
         if (!remote.meta) db.meta = { v: 1 };
         db.settings = { ...base.settings, ...(remote.settings || {}) };
         if (!db.trash) db.trash = [];
+        if (!db.pinRequests) db.pinRequests = [];
         migrate(db);
         rebuildTokens();
         console.log(`☁️  Loaded data from GitHub Gist (${Object.keys(db.users).length} members)`);

@@ -33,7 +33,7 @@
     catch { const e = new Error(t('err.offline')); e.status = 0; throw e; }
     let data = null;
     try { data = await r.json(); } catch {}
-    if (!r.ok) { const e = new Error(data && data.error ? errText(data.error, data.params) : t('err.network', { code: r.status })); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error(data && data.error ? errText(data.error, data.params) : t('err.network', { code: r.status })); e.status = r.status; e.key = data && data.error; throw e; }
     return data;
   }
   function toast(text, type = '', ms = 3500) {
@@ -128,25 +128,84 @@
     const redraw = () => drawPreview($('#joinPreview'), joinAv);
     buildCustomizer($('#joinCustomizer'), joinAv, redraw);
     requestAnimationFrame(redraw);
-    setTimeout(() => $('#joinName').focus(), 50);
+    setTimeout(() => $(joinMode === 'login' ? '#loginName' : '#joinName').focus(), 50);
+  }
+  let joinMode = 'new';
+  function setJoinMode(m) {
+    joinMode = m;
+    $('#newForm').classList.toggle('hidden', m !== 'new');
+    $('#loginForm').classList.toggle('hidden', m !== 'login');
+    $('#tabNew').classList.toggle('on', m === 'new');
+    $('#tabLogin').classList.toggle('on', m === 'login');
+    $('#joinErr').textContent = '';
+    setTimeout(() => $(m === 'login' ? '#loginName' : '#joinName').focus(), 30);
+  }
+  $('#tabNew').onclick = () => setJoinMode('new');
+  $('#tabLogin').onclick = () => setJoinMode('login');
+  const digitsOnly = (inp) => { inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); }); };
+  digitsOnly($('#joinPin')); digitsOnly($('#loginPin'));
+  function signedIn(r) {
+    state.token = r.token;
+    store.set('lp258_token', r.token); // remembered on this phone/browser, so no need to sign in again
+    state.me = r.user;
+    enterTown();
   }
   $('#joinRandom').onclick = () => { Object.assign(joinAv, Avatar.random()); showJoin(); };
   async function doJoin() {
     const nickname = $('#joinName').value.trim();
+    const pin = $('#joinPin').value.trim();
     $('#joinErr').textContent = '';
     if (!nickname) { $('#joinErr').textContent = t('join.needNick'); return; }
+    if (!/^\d{4}$/.test(pin)) { $('#joinErr').textContent = t('err.pin_format'); $('#joinPin').focus(); return; }
     $('#joinBtn').disabled = true;
     try {
-      const r = await api('POST', '/api/join', { nickname, avatar: joinAv });
-      state.token = r.token;
-      store.set('lp258_token', r.token);
-      state.me = r.user;
-      enterTown();
+      const r = await api('POST', '/api/join', { nickname, avatar: joinAv, pin });
+      signedIn(r);
       toast(t('join.welcome'), 'good', 5000);
       setTimeout(openRoomWelcome, 900);
-    } catch (e) { $('#joinErr').textContent = e.message; }
+    } catch (e) {
+      if (e.key === 'nick_taken') { // probably their own account on a new phone
+        setJoinMode('login');
+        $('#loginName').value = nickname;
+        $('#joinErr').textContent = t('join.nickTakenLogin');
+        $('#loginPin').focus();
+      } else $('#joinErr').textContent = e.message;
+    }
     $('#joinBtn').disabled = false;
   }
+  async function doLogin() {
+    const nickname = $('#loginName').value.trim();
+    const pin = $('#loginPin').value.trim();
+    $('#joinErr').textContent = '';
+    if (!nickname) { $('#joinErr').textContent = t('join.needNick'); return; }
+    if (!/^\d{4}$/.test(pin)) { $('#joinErr').textContent = t('err.pin_format'); return; }
+    $('#loginBtn').disabled = true;
+    try {
+      const r = await api('POST', '/api/login', { nickname, pin });
+      signedIn(r);
+      if (r.firstLogin) {
+        toast(t('join.firstWelcome', { name: r.user.nickname }), 'good', 7000);
+        setTimeout(() => { tabs.me = 'look'; openPanel('me'); }, 700);
+      } else toast(t('join.welcomeBack', { name: r.user.nickname }), 'good');
+    }
+    catch (e) { $('#joinErr').textContent = e.message; $('#loginPin').select(); }
+    $('#loginBtn').disabled = false;
+  }
+  $('#loginBtn').onclick = doLogin;
+  $('#forgotBtn').onclick = () => { $('#forgotForm').classList.toggle('hidden'); $('#forgotContact').focus(); };
+  $('#forgotSend').onclick = async () => {
+    const nickname = $('#loginName').value.trim();
+    $('#joinErr').textContent = '';
+    if (!nickname) { $('#joinErr').textContent = t('join.forgotNeedNick'); $('#loginName').focus(); return; }
+    try {
+      await api('POST', '/api/pin/forgot', { nickname, contact: $('#forgotContact').value.trim() });
+      $('#forgotForm').classList.add('hidden');
+      toast(t('join.forgotSent'), 'good', 7000);
+      $('#joinErr').textContent = '';
+    } catch (e) { $('#joinErr').textContent = e.message; }
+  };
+  $('#loginPin').onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
+  $('#joinPin').onkeydown = (e) => { if (e.key === 'Enter') doJoin(); };
   $('#joinBtn').onclick = doJoin;
   $('#joinName').onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) doJoin(); };
   $('#codeBtn').onclick = async () => {
@@ -190,6 +249,33 @@
     syncMusic();
     if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
     if (!store.get('lp258_tip')) { store.set('lp258_tip', '1'); setTimeout(() => toast(t('tip.move'), 'info', 6500), 800); }
+    if (state.me && !state.me.hasPin) setTimeout(() => openPinSetup(true), 1200);
+  }
+  function openPinSetup(first) {
+    const p1 = el('input', { class: 'inp pin-input', type: 'password', inputmode: 'numeric', maxLength: 4, placeholder: '••••', autocomplete: 'new-password' });
+    const p2 = el('input', { class: 'inp pin-input', type: 'password', inputmode: 'numeric', maxLength: 4, placeholder: '••••', autocomplete: 'new-password' });
+    const old = null;
+    [p1, p2, old].filter(Boolean).forEach(digitsOnly);
+    const err = el('p', { class: 'err' });
+    openModal(el('div', { class: 'room-view' },
+      el('div', { style: 'font-size:42px;text-align:center' }, '🔢'),
+      el('h3', { style: 'text-align:center' }, first ? t('pin.setTitle') : t('pin.changeTitle')),
+      el('p', { class: 'muted', style: 'text-align:center' }, first ? t('pin.setBody', { name: state.me.nickname }) : t('pin.changeBody2')),
+      old ? el('label', { class: 'field' }, el('span', {}, t('pin.current')), old) : null,
+      el('label', { class: 'field' }, el('span', {}, t('pin.new')), p1),
+      el('label', { class: 'field' }, el('span', {}, t('pin.again')), p2),
+      err,
+      el('div', { style: 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap' },
+        el('button', { class: 'btn ghost', onclick: closeModal }, first ? t('room.later') : t('dlg.cancel')),
+        el('button', { class: 'btn primary', onclick: async () => {
+          if (!/^\d{4}$/.test(p1.value)) { err.textContent = t('err.pin_format'); return; }
+          if (p1.value !== p2.value) { err.textContent = t('pin.mismatch'); return; }
+          try {
+            const r = await api('POST', '/api/pin', { pin: p1.value, oldPin: old ? old.value : undefined });
+            state.me = r.user; closeModal(); toast(t('pin.saved'), 'good', 5000);
+            if (currentPanel === 'me') renderPanel();
+          } catch (e) { err.textContent = e.message; }
+        } }, t('pin.save')))));
   }
   function addPlayer(p) {
     const old = state.players.get(p.id);
@@ -1316,6 +1402,9 @@
       const code = el('div', { class: 'code-box', title: t('me.reveal') }, me.code);
       code.onclick = () => code.classList.toggle('show');
       wrap.append(
+        el('div', { class: 'card' }, el('h3', {}, t('pin.cardTitle')),
+          el('p', { class: 'muted', style: 'margin:0 0 8px' }, me.hasPin ? t('pin.cardHasPin', { name: me.nickname }) : t('pin.cardNoPin')),
+          el('button', { class: 'btn small ' + (me.hasPin ? '' : 'primary'), onclick: () => openPinSetup(!me.hasPin) }, me.hasPin ? t('pin.changeBtn') : t('pin.setBtn'))),
         installCard(),
         el('div', { class: 'card' }, el('h3', {}, t('music.title')),
           el('div', { class: 'cz-opts' }, [[true, t('music.onLabel')], [false, t('music.offLabel')]].map(([v, label]) => el('button', { class: musicOn === v ? 'on' : '', onclick: () => { musicOn = v; store.set('lp258_music', v ? '1' : '0'); updateSeasonUi(); syncMusic(); renderPanel(); } }, label))),

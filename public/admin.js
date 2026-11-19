@@ -154,7 +154,8 @@
     const pending = data.submissions.filter((s) => s.status === 'pending').length + (data.pendingPayments || 0);
     $('#tabs').replaceChildren(...TABS.map((id) => el('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; render(); } }, t('ad.tab.' + id),
       id === 'review' && pending - (data.pendingPayments || 0) ? el('b', { class: 'badge' }, pending - (data.pendingPayments || 0)) : null,
-      id === 'events' && data.pendingPayments ? el('b', { class: 'badge' }, data.pendingPayments) : null)));
+      id === 'events' && data.pendingPayments ? el('b', { class: 'badge' }, data.pendingPayments) : null,
+      id === 'users' && (data.pinRequests || []).length ? el('b', { class: 'badge' }, data.pinRequests.length) : null)));
     const main = $('#main');
     main.replaceChildren();
     if (tab === 'overview') main.append(renderOverview());
@@ -176,7 +177,7 @@
     return el('div', {},
       el('div', { class: 'stats' },
         el('div', { class: 'stat' }, el('b', {}, data.onlineCount), t('ad.stat.online')),
-        el('div', { class: 'stat' }, el('b', {}, data.users.length), t('ad.stat.users')),
+        el('div', { class: 'stat', style: 'cursor:pointer', onclick: () => go('users') }, el('b', {}, data.users.filter((u) => u.signedIn).length + ' / ' + data.users.length), t('ad.stat.signedIn')),
         el('div', { class: 'stat' }, el('b', {}, upcoming.length), t('ad.stat.upcoming')),
         el('div', { class: 'stat', style: pending ? 'background:#FFF3C4' : '' }, el('b', {}, pending), t('ad.stat.pending')),
         el('div', { class: 'stat', style: data.pendingPayments ? 'background:#EFE6FF;cursor:pointer' : '', onclick: () => go('events') }, el('b', {}, data.pendingPayments || 0), t('ad.stat.payments'))),
@@ -361,16 +362,85 @@
     try { await api('POST', '/api/admin/submission', { id: s.id, status }); toast(t('ad.updated'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
   }
 
+  let userFilter = 'all';
+  function pinRequestsCard() {
+    const reqs = data.pinRequests || [];
+    if (!reqs.length) return null;
+    return el('div', { class: 'card', style: 'background:#FFF3C4' }, el('h3', {}, t('ad.pinReqTitle', { n: reqs.length })),
+      el('p', { class: 'muted', style: 'margin:0 0 6px' }, t('ad.pinReqHint')),
+      reqs.map((r) => el('div', { class: 'att-row' },
+        el('div', { style: 'flex:1;min-width:180px' }, el('b', {}, r.nickname), r.exists ? null : el('span', { class: 'tag r', style: 'margin-left:6px' }, t('ad.pinReqUnknown')),
+          el('div', { class: 'muted' }, [r.contact ? '📱 ' + r.contact : '', ago(r.at)].filter(Boolean).join(' · '))),
+        r.exists ? el('button', { class: 'btn small primary', onclick: async () => {
+          try { const res = await api('POST', '/api/admin/pinrequest', { id: r.id, action: 'reset' }); await load(); showPins([{ nickname: r.nickname, pin: res.pin }], t('ad.pinReqDoneTitle')); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, t('ad.pinReqReset')) : null,
+        el('button', { class: 'btn small ghost', onclick: async () => { try { await api('POST', '/api/admin/pinrequest', { id: r.id, action: 'dismiss' }); load(); } catch (e) { toast(e.message, 'bad'); } } }, t('ad.pinReqDismiss')))));
+  }
+  function showPins(rows, title) {
+    const lines = rows.filter((r) => r.pin).map((r) => `${r.nickname}  PIN: ${r.pin}`);
+    const shareText = t('ad.shareIntro', { url: location.origin }) + '\n' + lines.join('\n');
+    openModal(el('div', {},
+      el('h2', { style: 'margin-top:0' }, title),
+      el('p', { class: 'muted' }, t('ad.pinsHint')),
+      el('div', { class: 'tbl-wrap' }, el('table', {}, el('tbody', {}, rows.map((r) => el('tr', {},
+        el('td', {}, el('b', {}, r.nickname)),
+        el('td', {}, r.pin ? el('span', { class: 'pin-show' }, r.pin) : el('span', { class: 'tag r' }, t('err.' + r.error) !== 'err.' + r.error ? t('err.' + r.error) : r.error))))))),
+      el('textarea', { class: 'inp', rows: Math.min(8, lines.length + 2), readOnly: true, value: shareText, style: 'margin-top:10px;font-size:13px' }),
+      el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;margin-top:10px' },
+        el('button', { class: 'btn', onclick: () => { navigator.clipboard && navigator.clipboard.writeText(shareText).then(() => toast(t('ad.copied'), 'good')); } }, t('ad.copyAll')),
+        el('button', { class: 'btn primary', onclick: closeModal }, t('close')))));
+  }
+  function addMembers() {
+    const one = el('input', { class: 'inp', maxLength: 16, placeholder: t('ad.addOnePh') });
+    const pin = el('input', { class: 'inp pin-input', inputmode: 'numeric', maxLength: 4, placeholder: t('ad.pinAuto') });
+    pin.addEventListener('input', () => { pin.value = pin.value.replace(/\D/g, '').slice(0, 4); });
+    const many = el('textarea', { class: 'inp', rows: 6, placeholder: t('ad.addManyPh') });
+    const err = el('p', { class: 'err' });
+    const submit = async (names, p) => {
+      err.textContent = '';
+      if (!names.length) { err.textContent = t('err.nick_required'); return; }
+      if (p && !/^\d{4}$/.test(p)) { err.textContent = t('err.pin_format'); return; }
+      try { const r = await api('POST', '/api/admin/user/create', { names, pin: p || undefined }); await load(); showPins(r.results, t('ad.addedTitle', { n: r.results.filter((x) => x.pin).length })); }
+      catch (e) { err.textContent = e.message; }
+    };
+    openModal(el('div', { class: 'form' },
+      el('h2', { style: 'margin:0' }, t('ad.addMembersTitle')),
+      el('p', { class: 'muted' }, t('ad.addMembersHint')),
+      el('label', {}, t('ad.addOne')), el('div', { style: 'display:flex;gap:8px' }, one, el('div', { style: 'width:130px;flex:none' }, pin)),
+      el('button', { class: 'btn primary small', style: 'margin-top:6px', onclick: () => submit([one.value.trim()].filter(Boolean), pin.value) }, t('ad.addOneBtn')),
+      el('label', { style: 'margin-top:16px' }, t('ad.addMany')), many,
+      el('button', { class: 'btn blue small', style: 'margin-top:6px', onclick: () => submit(many.value.split(/[\n,，、]+/).map((x) => x.trim()).filter(Boolean)) }, t('ad.addManyBtn')),
+      err,
+      el('div', { style: 'text-align:right;margin-top:10px' }, el('button', { class: 'btn ghost', onclick: closeModal }, t('ad.cancel')))));
+  }
   function renderUsers() {
+    const all = data.users;
+    const weekAgo = Date.now() - 7 * 864e5;
+    const counts = {
+      all: all.length,
+      signed: all.filter((u) => u.signedIn).length,
+      never: all.filter((u) => !u.signedIn).length,
+      active: all.filter((u) => u.online || (u.lastSeen && u.lastSeen > weekAgo)).length,
+      nopin: all.filter((u) => !u.hasPin).length,
+      dup: all.filter((u) => u.duplicate).length,
+    };
+    const pass = { all: () => true, signed: (u) => u.signedIn, never: (u) => !u.signedIn, active: (u) => u.online || (u.lastSeen && u.lastSeen > weekAgo), nopin: (u) => !u.hasPin, dup: (u) => u.duplicate };
+    const list = all.filter(pass[userFilter] || pass.all).sort((a, b) => (userFilter === 'dup' ? a.nickname.localeCompare(b.nickname) : 0));
+    const stat = (k, cls) => el('div', { class: 'stat' + (userFilter === k ? ' on' : ''), style: 'cursor:pointer', onclick: () => { userFilter = k; render(); } }, el('b', { class: cls || '' }, counts[k]), t('ad.uf.' + k));
     return el('div', {},
-      el('div', { class: 'toolbar' }, el('h2', {}, t('ad.usersTitle', { n: data.users.length }))),
-      data.users.length ? el('div', { class: 'tbl-wrap' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['', 'ad.h.nick', 'ad.h.job', 'ad.h.status', 'ad.h.points', 'ad.h.lastSeen', ''].map((h) => el('th', {}, h ? t(h) : '')))),
-        el('tbody', {}, data.users.map((u) => el('tr', { style: u.banned ? 'opacity:.5' : '' },
+      el('div', { class: 'toolbar' }, el('h2', {}, t('ad.usersTitle', { n: all.length })), el('button', { class: 'btn primary', onclick: addMembers }, t('ad.addMembersBtn'))),
+      pinRequestsCard(),
+      el('div', { class: 'stats user-stats' }, stat('all'), stat('signed'), stat('never'), stat('active'), counts.nopin ? stat('nopin') : null, counts.dup ? stat('dup') : null),
+      userFilter === 'dup' ? el('p', { class: 'muted' }, t('ad.dupFilterHint')) : null,
+      list.length ? el('div', { class: 'tbl-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, ['', 'ad.h.nick', 'ad.h.signIn', 'ad.h.job', 'ad.h.points', 'ad.h.lastSeen', ''].map((h) => el('th', {}, h ? t(h) : '')))),
+        el('tbody', {}, list.map((u) => el('tr', { style: u.banned ? 'opacity:.5' : '' },
           el('td', {}, el('img', { class: 'mini-av', src: Avatar.thumb(u.avatar, 34), alt: '' })),
-          el('td', {}, el('b', {}, u.nickname), u.status ? el('div', { class: 'muted' }, u.status) : null),
+          el('td', {}, el('b', {}, u.nickname), ' ', !u.hasPin ? el('span', { class: 'tag y', title: t('ad.noPinHint') }, t('ad.noPin')) : null, ' ', u.duplicate ? el('span', { class: 'tag r', title: t('ad.dupHint') }, t('ad.dup')) : null,
+            u.status ? el('div', { class: 'muted' }, u.status) : null),
+          el('td', {}, u.banned ? t('ad.banned') : !u.signedIn ? el('span', { class: 'tag' }, t('ad.neverSignedIn')) : u.online ? t('ad.online') : el('span', { class: 'tag g' }, t('ad.signedInOn', { date: fmt(new Date(u.firstLoginAt || u.createdAt).toISOString()).replace(/\s\S+$/, '') }))),
           el('td', {}, u.room ? jobLabel(u.room.type) : t('ad.noRoom')),
-          el('td', {}, u.banned ? t('ad.banned') : u.online ? t('ad.online') : t('ad.offline')),
           el('td', {}, '⭐ ' + u.points),
           el('td', {}, u.online ? t('ad.now') : ago(u.lastSeen)),
           el('td', { class: 'acts' },
@@ -379,25 +449,40 @@
               if (!u.banned && !await askConfirm(t('ad.banConfirm', { name: u.nickname }), true)) return;
               setUser(u, { banned: !u.banned });
             } }, u.banned ? t('ad.unban') : t('ad.ban')),
-            el('button', { class: 'btn small ghost', onclick: () => deleteUser(u) }, t('ad.delete'))))))))
+            el('button', { class: 'btn small ghost', style: 'color:var(--red)', onclick: () => deleteUser(u) }, t('ad.delete'))))))))
         : el('div', { class: 'empty' }, t('ad.noUsers')));
   }
   function editUser(u) {
     const nick = el('input', { class: 'inp', value: u.nickname, maxLength: 16 });
     const status = el('input', { class: 'inp', value: u.status || '', maxLength: 40 });
     const pts = el('input', { class: 'inp', type: 'number', min: 0, value: u.points });
+    const pin = el('input', { class: 'inp', type: 'text', inputmode: 'numeric', maxLength: 4, placeholder: u.hasPin ? t('ad.pinKeep') : t('ad.pinNone') });
+    pin.addEventListener('input', () => { pin.value = pin.value.replace(/\D/g, '').slice(0, 4); });
+    const others = data.users.filter((x) => x.id !== u.id);
+    const mergeSel = el('select', { class: 'inp' }, el('option', { value: '' }, t('ad.mergePick')), others.map((x) => el('option', { value: x.id }, `${x.nickname} · ⭐ ${x.points}`)));
     const err = el('p', { class: 'err' });
     openModal(el('div', { class: 'form' },
       el('div', { style: 'display:flex;gap:10px;align-items:center' }, el('img', { class: 'mini-av', style: 'width:56px;height:56px', src: Avatar.thumb(u.avatar, 56), alt: '' }), el('h2', { style: 'margin:0' }, t('ad.editUser'))),
       el('label', {}, t('ad.h.nick')), nick,
       el('label', {}, t('ad.h.status')), status,
       el('label', {}, t('ad.h.points')), pts,
+      el('label', {}, t('ad.pinReset')), pin,
+      el('details', { class: 'merge-box' }, el('summary', {}, t('ad.mergeTitle')),
+        el('p', { class: 'muted', style: 'margin:6px 0' }, t('ad.mergeHint', { name: u.nickname })), mergeSel,
+        el('button', { class: 'btn small blue', style: 'margin-top:6px', onclick: async () => {
+          const into = others.find((x) => x.id === mergeSel.value);
+          if (!into) return;
+          if (!await askConfirm(t('ad.mergeConfirm', { from: u.nickname, into: into.nickname }), true)) return;
+          try { await api('POST', '/api/admin/user/merge', { fromId: u.id, intoId: into.id }); closeModal(); toast(t('ad.merged'), 'good'); load(); }
+          catch (e) { err.textContent = e.message; }
+        } }, t('ad.mergeBtn'))),
       err,
       el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' },
         el('button', { class: 'btn ghost', style: 'margin-right:auto;color:var(--red)', onclick: () => deleteUser(u) }, t('ad.delete')),
         el('button', { class: 'btn ghost', onclick: closeModal }, t('ad.cancel')),
         el('button', { class: 'btn primary', onclick: async () => {
-          try { await api('POST', '/api/admin/user', { id: u.id, nickname: nick.value, status: status.value, points: Number(pts.value) }); closeModal(); toast(t('ad.saved'), 'good'); load(); }
+          if (pin.value && !/^\d{4}$/.test(pin.value)) { err.textContent = t('err.pin_format'); return; }
+          try { await api('POST', '/api/admin/user', { id: u.id, nickname: nick.value, status: status.value, points: Number(pts.value), pin: pin.value || undefined }); closeModal(); toast(pin.value ? t('ad.pinResetDone', { name: nick.value, pin: pin.value }) : t('ad.saved'), 'good'); load(); }
           catch (e) { err.textContent = e.message; }
         } }, t('ad.save')))));
   }

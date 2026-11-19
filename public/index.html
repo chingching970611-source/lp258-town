@@ -25,16 +25,40 @@
         <div style="flex:1"><h1 data-i18n="app.name"></h1><p data-i18n="app.tagline"></p></div>
         <button class="btn ghost small lang-btn" type="button" data-i18n="lang.switch"></button>
       </div>
-      <div class="join-grid">
-        <div class="preview-wrap"><canvas id="joinPreview" width="220" height="240"></canvas><button class="btn ghost small" id="joinRandom" data-i18n="join.random"></button></div>
-        <div id="joinCustomizer" class="customizer"></div>
+      <div class="join-tabs">
+        <button type="button" id="tabNew" class="on" data-i18n="join.tabNew"></button>
+        <button type="button" id="tabLogin" data-i18n="join.tabLogin"></button>
       </div>
-      <label class="field"><span data-i18n="join.nickname"></span><input id="joinName" maxlength="16" data-i18n-ph="join.nickPh" autocomplete="nickname"></label>
-      <button class="btn primary big" id="joinBtn" data-i18n="join.enter"></button>
-      <details class="code-login">
-        <summary data-i18n="join.haveCode"></summary>
-        <div class="row"><input id="codeInput" data-i18n-ph="join.codePh" autocomplete="off"><button class="btn" id="codeBtn" data-i18n="join.login"></button></div>
-      </details>
+      <!-- new member -->
+      <div id="newForm">
+        <div class="join-grid">
+          <div class="preview-wrap"><canvas id="joinPreview" width="220" height="240"></canvas><button class="btn ghost small" id="joinRandom" data-i18n="join.random"></button></div>
+          <div id="joinCustomizer" class="customizer"></div>
+        </div>
+        <div class="join-fields">
+          <label class="field"><span data-i18n="join.nickname"></span><input id="joinName" maxlength="16" data-i18n-ph="join.nickPh" autocomplete="nickname"></label>
+          <label class="field"><span data-i18n="join.pinNew"></span><input id="joinPin" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="new-password"></label>
+        </div>
+        <p class="muted pin-hint" data-i18n="join.pinHint"></p>
+        <button class="btn primary big" id="joinBtn" data-i18n="join.enter"></button>
+      </div>
+      <!-- returning member on a new phone / browser -->
+      <div id="loginForm" class="hidden">
+        <p class="muted" data-i18n="join.loginHint"></p>
+        <label class="field"><span data-i18n="join.nickname"></span><input id="loginName" maxlength="16" autocomplete="username"></label>
+        <label class="field"><span data-i18n="join.pinEnter"></span><input id="loginPin" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="current-password"></label>
+        <button class="btn primary big" id="loginBtn" data-i18n="join.loginBtn"></button>
+        <button type="button" class="link-btn" id="forgotBtn" data-i18n="join.forgotBtn"></button>
+        <div id="forgotForm" class="forgot-box hidden">
+          <p class="muted" data-i18n="join.forgotHint"></p>
+          <input id="forgotContact" class="inp" maxlength="80" data-i18n-ph="join.forgotContactPh" autocomplete="tel">
+          <button type="button" class="btn small" id="forgotSend" data-i18n="join.forgotSend"></button>
+        </div>
+        <details class="code-login">
+          <summary data-i18n="join.haveCode"></summary>
+          <div class="row"><input id="codeInput" data-i18n-ph="join.codePh" autocomplete="off"><button class="btn" id="codeBtn" data-i18n="join.login"></button></div>
+        </details>
+      </div>
       <p class="err" id="joinErr"></p>
     </div>
   </section>

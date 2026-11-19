@@ -284,3 +284,23 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .rec-row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .date-badge.tbc .d { font-size: 15px; padding: 8px 0 6px; }
 .event.tbc { background: linear-gradient(135deg, #FFF8E6, #FFF0F6); }
+
+/* ---------- join tabs, PIN ---------- */
+.join-tabs { display: flex; gap: 6px; background: #F6EFE6; padding: 4px; border-radius: 14px; margin-bottom: 12px; }
+.join-tabs button { flex: 1; border: 0; background: none; border-radius: 11px; padding: 9px 8px; font-weight: 800; font-size: 15px; color: var(--muted); }
+.join-tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 2px 0 rgba(0,0,0,.08); }
+.join-fields { display: grid; grid-template-columns: 1fr 170px; gap: 10px; }
+.pin-input { letter-spacing: .5em; font-size: 20px; text-align: center; font-weight: 800; }
+.pin-hint { margin: -6px 0 10px; }
+.merge-box { margin-top: 12px; background: #F4F7FF; border-radius: 12px; padding: 8px 10px; }
+.merge-box summary { cursor: pointer; font-weight: 700; }
+@media (max-width: 640px) { .join-fields { grid-template-columns: 1fr; gap: 0; } }
+
+/* ---------- members admin, forgot PIN ---------- */
+.link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; padding: 6px 0; margin-top: 6px; text-decoration: underline; }
+.forgot-box { background: #F4F7FF; border-radius: 12px; padding: 10px; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.forgot-box p { margin: 0; }
+.user-stats .stat.on { box-shadow: 0 0 0 2px var(--primary); }
+.pin-show { font-family: ui-monospace, Consolas, monospace; font-weight: 800; font-size: 18px; letter-spacing: .2em; background: #FFF3C4; padding: 2px 8px; border-radius: 8px; }
+.pin-input::placeholder { letter-spacing: normal; font-size: 13px; font-weight: 600; }
+.pin-input[placeholder="••••"]::placeholder { letter-spacing: .5em; font-size: 20px; }
