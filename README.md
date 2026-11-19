@@ -42,6 +42,18 @@ $env:ADMIN_PASSWORD = "你嘅密碼"; node server.js
 - 👥 成員：調整積分、停用 / 恢復帳號
 - 📢 公告：即時彈出畀所有人，顯示喺小鎮頂部
 
+## 免費上線（Render 免費方案 + GitHub Gist 存資料）
+
+Render 免費方案每次重啟都會清空硬碟，所以資料會自動備份去一個私密 GitHub Gist。
+
+1. 喺 https://gist.github.com 開一個 **Secret gist**，檔名 `lp258-db.json`，內容 `{}`。網址最尾嗰串就係 `GIST_ID`。
+2. 喺 https://github.com/settings/tokens/new 開一個 **classic token**，只剔 `gist`，冇限期（或者揀長啲），呢個就係 `GITHUB_TOKEN`。
+3. 用 GitHub 登入 https://dashboard.render.com → **New → Blueprint** → 揀 `lp258-town` repo。
+4. 填 `ADMIN_PASSWORD`（後台密碼）、`GIST_ID`、`GITHUB_TOKEN` → **Apply**。
+5. 幾分鐘後就有 `https://lp258-town.onrender.com` 之類嘅網址，可以分享畀朋友。
+
+免費方案限制：冇人用 15 分鐘會瞓覺，第一個人入嚟要等大約 1 分鐘先醒。
+
 ## 上線前要留意
 - 帳號係「暱稱 + 登入碼」，冇 email / 密碼；登入碼唔見咗就無法登入嗰個帳號。
 - 正式上線請放喺 HTTPS 後面（例如 Nginx / Caddy / Render / Railway），並設定 `ADMIN_PASSWORD`。
