@@ -487,14 +487,34 @@ button.theme-song { width: 100%; border: 0; font: inherit; cursor: pointer; }
 .theme-bar .tb-host iframe, .theme-bar .tb-host > div { width: 100%; height: 80px; border: 0; display: block; }
 .theme-bar .tb-min { flex: none; width: 30px; height: 30px; border: 0; border-radius: 10px; background: rgba(255,255,255,.92); box-shadow: var(--shadow); font-size: 18px; font-weight: 900; line-height: 1; cursor: pointer; }
 .theme-bar .theme-song { flex: 1; margin: 0; }
-.theme-bar.mini { width: auto; }
 .theme-bar .tb-pill { border: 0; border-radius: 14px; padding: 7px 12px; background: #1DB954; color: #fff; font-weight: 800; font-size: 13px; box-shadow: var(--shadow); cursor: pointer; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.theme-bar:not(.mini) .tb-pill { display: none; }
-.theme-bar.mini .tb-min { display: none; }
-.theme-bar.mini .tb-host { position: absolute; left: -9999px; top: 0; width: 300px; } /* hidden but still playing */
 .theme-bar .tb-host.yt { height: auto; background: none; box-shadow: none; overflow: visible; }
 @media (max-width: 640px) {
   .theme-bar { top: calc(max(10px, env(safe-area-inset-top)) + 84px); left: 8px; right: 8px; width: auto; }
-  .theme-bar.mini { left: auto; }
   body.tb-open .chat-log { top: 182px !important; }
+}
+
+/* ---------- LP 258 theme song button + player ---------- */
+.theme-bar { display: block; width: auto; }
+.theme-bar .tb-pill { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 16px; padding: 7px 12px; background: #1DB954; color: #fff; font-weight: 800; font-size: 13px; box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; max-width: none; }
+.theme-bar .tb-pill .tb-act { margin-left: 4px; background: rgba(255,255,255,.25); border-radius: 50%; width: 22px; height: 22px; display: inline-grid; place-items: center; font-size: 11px; }
+.theme-bar.playing .tb-pill { animation: tbpulse 1.6s ease-in-out infinite; }
+@keyframes tbpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(29,185,84,.55), var(--shadow); } 50% { box-shadow: 0 0 0 7px rgba(29,185,84,0), var(--shadow); } }
+.theme-bar .tb-card { width: min(360px, calc(100vw - 20px)); background: #1C1C24; border-radius: 16px; padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.3); }
+.theme-bar:not(.open) .tb-card { position: absolute; left: -9999px; top: 0; } /* hidden, but the song keeps playing */
+.theme-bar.open .tb-pill { display: none; }
+.tb-head { display: flex; align-items: center; gap: 6px; color: #fff; margin: 0 2px 6px; }
+.tb-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tb-titles b { font-size: 14px; }
+.tb-titles small { font-size: 11px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-btn { flex: none; width: 32px; height: 32px; border: 0; border-radius: 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 14px; cursor: pointer; }
+.theme-bar .tb-host { height: 80px; border-radius: 12px; overflow: hidden; box-shadow: none; }
+.theme-bar .tb-host.yt { height: auto; }
+.theme-bar .tb-min { display: none !important; }
+@media (max-width: 640px) {
+  .theme-bar { left: auto; right: 8px; }
+  .theme-bar.open { left: 8px; }
+  .theme-bar .tb-card { width: auto; }
+  body.tb-mini .chat-log { top: 136px !important; }
+  body.tb-open .chat-log { top: 222px !important; }
 }

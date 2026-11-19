@@ -1647,57 +1647,75 @@
       return m ? `spotify:${m[1]}:${m[2]}` : null;
     } catch { return null; }
   }
-  let spotifyCtl = null, spotifyUriNow = null, spotifyPlaying = false;
-  // Spotify's player tells the page when it plays or pauses; use that to pause / resume the town music
+  // LP 258 theme song: a small "🎵 LP 258 Theme Song" button on the town page.
+  // Tap it → the Spotify player opens and the song starts from the beginning and repeats; ⏹ stops it;
+  // ▾ hides the player (the song keeps playing). The player stays loaded even when hidden.
+  let spotifyFrame = null, spotifyPlaying = false, themeLoop = false, themeExpanded = false, spLastPos = 0, spDuration = 0;
+  const spSend = (command) => { try { if (spotifyFrame && spotifyFrame.contentWindow) spotifyFrame.contentWindow.postMessage({ command }, 'https://open.spotify.com'); } catch {} };
   window.addEventListener('message', (e) => {
-    if (e.origin !== 'https://open.spotify.com') return;
+    if (e.origin !== 'https://open.spotify.com' || !spotifyFrame || e.source !== spotifyFrame.contentWindow) return;
     let d = e.data;
     try { if (typeof d === 'string') d = JSON.parse(d); } catch { return; }
-    if (d && d.type === 'playback_update' && d.payload) setThemePlaying(!d.payload.isPaused && !(d.payload.duration && d.payload.position >= d.payload.duration));
+    if (!d || d.type !== 'playback_update' || !d.payload) return;
+    const p = d.payload;
+    if (p.duration) spDuration = p.duration;
+    const atEnd = spDuration && (p.position >= spDuration - 400 || (p.isPaused && spLastPos >= spDuration - 1500));
+    if (atEnd && themeLoop) { spLastPos = 0; setTimeout(() => spSend('play_from_start'), 150); return; } // repeat forever
+    if (p.isPaused && !atEnd && spotifyPlaying) themeLoop = false; // paused on Spotify's own button
+    if (!p.isPaused) { spLastPos = p.position || 0; if (!themeLoop) themeLoop = true; }
+    setThemePlaying(!p.isPaused && !atEnd);
   });
   function setThemePlaying(on) {
     if (spotifyPlaying === on) return;
     spotifyPlaying = on;
     themeOpen = on || !!(document.getElementById('themePlayer') && !document.getElementById('themePlayer').classList.contains('tp-standby'));
     syncMusic();
-    const pill = document.querySelector('#themeBar .tb-pill');
-    if (pill) pill.firstChild.textContent = on ? '🔊 ' : '🎵 ';
+    renderThemeState();
   }
-  // The player is never moved once created (moving an embedded player restarts it), so shrinking the bar
-  // only hides it visually and the song keeps playing.
+  function renderThemeState() {
+    const bar = document.getElementById('themeBar');
+    if (!bar) return;
+    bar.classList.toggle('open', themeExpanded);
+    bar.classList.toggle('playing', spotifyPlaying);
+    const act = bar.querySelector('.tb-act');
+    if (act) act.textContent = spotifyPlaying ? '🔊' : '▶';
+    document.body.classList.toggle('tb-open', themeExpanded);
+    document.body.classList.toggle('tb-mini', !themeExpanded);
+  }
+  function themePlay() { themeLoop = true; spLastPos = 0; spSend('play_from_start'); }
+  function themeStop() { themeLoop = false; spSend('pause'); themeExpanded = false; setThemePlaying(false); renderThemeState(); }
   function mountThemeBar() {
     const s = state.settings || {};
     const uri = spotifyUri(s.themeUrl || ''), yid = youtubeId(s.themeUrl || '');
     let bar = document.getElementById('themeBar');
-    if (!s.themeUrl || (!uri && !yid)) { if (bar) bar.remove(); spotifyCtl = null; spotifyUriNow = null; document.body.classList.remove('tb-open', 'tb-mini'); return; }
+    if (!s.themeUrl || (!uri && !yid)) { if (bar) bar.remove(); spotifyFrame = null; document.body.classList.remove('tb-open', 'tb-mini'); return; }
     const key = uri || 'yt:' + yid;
     if (!bar || bar.dataset.key !== key) {
       if (bar) bar.remove();
-      spotifyCtl = null; spotifyUriNow = null;
-      const toggle = () => { store.set('lp258_themeMini', store.get('lp258_themeMini') === '1' ? '0' : '1'); applyThemeMini(); };
+      spotifyFrame = null; spotifyPlaying = false; themeLoop = false; themeExpanded = false;
       const host = el('div', { class: 'tb-host' + (uri ? '' : ' yt') });
       bar = el('div', { class: 'theme-bar', id: 'themeBar', 'data-key': key },
-        el('button', { class: 'tb-pill', type: 'button', onclick: toggle }, el('span', {}, spotifyPlaying ? '🔊 ' : '🎵 '), el('span', { class: 'tb-pill-t' }, s.themeTitle || t('theme.title'))),
-        host,
-        el('button', { class: 'tb-min', type: 'button', title: t('theme.minimize'), onclick: toggle }, '–'));
+        el('button', { class: 'tb-pill', type: 'button', onclick: () => {
+          const wasPlaying = spotifyPlaying;
+          themeExpanded = true; renderThemeState();
+          if (uri && !wasPlaying) themePlay();
+        } }, el('span', {}, '🎵 '), el('b', {}, t('theme.name')), el('span', { class: 'tb-act' }, '▶')),
+        el('div', { class: 'tb-card' },
+          el('div', { class: 'tb-head' },
+            el('div', { class: 'tb-titles' }, el('b', {}, '🎵 ', t('theme.name')), el('small', { class: 'tb-song' }, (s.themeTitle || '') + (uri ? ' · 🔁 ' + t('theme.loop') : ''))),
+            uri ? el('button', { class: 'tb-btn', type: 'button', title: t('theme.stop'), onclick: themeStop }, '⏹') : null,
+            el('button', { class: 'tb-btn', type: 'button', title: t('theme.minimize'), onclick: () => { themeExpanded = false; renderThemeState(); } }, '▾')),
+          host));
       $('#town').append(bar);
       if (uri) {
         const [, kind, id] = uri.split(':');
-        spotifyUriNow = uri;
-        host.append(el('iframe', { src: `https://open.spotify.com/embed/${kind}/${id}`, height: 80, allow: 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture', title: s.themeTitle || 'Spotify' }));
+        spotifyFrame = el('iframe', { src: `https://open.spotify.com/embed/${kind}/${id}`, height: 80, allow: 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture', title: s.themeTitle || 'Spotify' });
+        host.append(spotifyFrame);
       } else host.append(themeSong('on-page')); // a YouTube link: a button that opens the small YouTube player
     }
-    const pt = bar.querySelector('.tb-pill-t');
-    if (pt) pt.textContent = s.themeTitle || t('theme.title');
-    applyThemeMini();
-  }
-  function applyThemeMini() {
-    const bar = document.getElementById('themeBar');
-    if (!bar) return;
-    const mini = store.get('lp258_themeMini') === '1';
-    bar.classList.toggle('mini', mini);
-    document.body.classList.toggle('tb-open', !mini);
-    document.body.classList.toggle('tb-mini', mini);
+    const song = bar.querySelector('.tb-song');
+    if (song) song.textContent = (s.themeTitle || '') + (uri ? ' · 🔁 ' + t('theme.loop') : '');
+    renderThemeState();
   }
   function themeSong(cls = '') {
     const s = state.settings || {};
@@ -1759,6 +1777,7 @@
       kind === 'hist' ? el('span', { class: 'tag ' + (p.status !== 'done' ? '' : p.winner === 'tie' ? 'y' : p.winner === state.meId ? 'g' : 'r') },
         p.status === 'done' ? t('pk.res.' + (p.winner === 'tie' ? 'tie' : p.winner === state.meId ? 'win' : 'lose')) : t('pk.st.' + p.status)) : null);
     return el('div', {},
+      el('div', { class: 'section-t' }, t('pk.recordTitle')),
       el('div', { class: 'pk-record' },
         el('div', {}, el('b', {}, pk.record.w), t('pk.wins')), el('div', {}, el('b', {}, pk.record.l), t('pk.losses')), el('div', {}, el('b', {}, pk.record.t), t('pk.ties'))),
       pk.incoming.length ? el('div', { class: 'section-t' }, t('pk.incoming', { n: pk.incoming.length })) : null,
