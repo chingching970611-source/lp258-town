@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: lp258-town
+    runtime: node
+    plan: free
+    buildCommand: "true"
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      # Host backend password (you choose it when creating the service)
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Secret GitHub Gist that stores the data, so it survives restarts on the free plan
+      - key: GIST_ID
+        sync: false
+      # GitHub classic token with ONLY the "gist" scope
+      - key: GITHUB_TOKEN
+        sync: false

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>LP 258 Host 後台</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html, body { overflow: auto; background: #FFF6EA; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+    .login .card { width: min(380px, 100%); padding: 22px; }
+    header.ad { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    header.ad h1 { margin: 0; font-size: 24px; flex: 1; }
+    .ad-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .ad-tabs button { border: 0; background: #fff; border-radius: 12px; padding: 7px 13px; font-weight: 700; box-shadow: 0 2px 0 rgba(0,0,0,.08); position: relative; }
+    .ad-tabs button.on { background: var(--ink); color: #fff; }
+    .ad-tabs .badge { top: -6px; right: -6px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .stat { background: #fff; border-radius: 18px; padding: 14px; box-shadow: 0 3px 0 rgba(58,46,63,.06); }
+    .stat b { display: block; font-size: 30px; line-height: 1.1; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 3px 0 rgba(58,46,63,.06); }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+    th { background: #FBF3E8; font-size: 13px; color: var(--muted); }
+    td.acts { white-space: nowrap; text-align: right; }
+    td.acts .btn { margin-left: 4px; }
+    .tbl-wrap { overflow-x: auto; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    .toolbar h2 { margin: 0; flex: 1; font-size: 20px; }
+    .form label { display: block; font-weight: 700; font-size: 13px; margin: 10px 0 4px; }
+    .form .opt-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .form .opt-row input[type=radio] { width: 18px; height: 18px; flex: none; }
+    select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; border-radius: 14px; padding: 9px 12px; }
+    .mini-av { width: 34px; height: 34px; border-radius: 10px; background: #DDF4FF; vertical-align: middle; }
+    .pre { white-space: pre-wrap; max-width: 380px; }
+    .modal-card { width: min(560px, 100%); }
+  </style>
+</head>
+<body>
+  <div id="loginView" class="login hidden">
+    <div class="card">
+      <h2 style="margin:0 0 4px">🛠️ Host 後台</h2>
+      <p class="muted" style="margin:0 0 12px">只限 Host / 管理員登入</p>
+      <input id="pw" class="inp" type="password" placeholder="管理員密碼" autocomplete="current-password">
+      <button id="loginBtn" class="btn primary big" style="margin-top:10px">登入</button>
+      <p id="loginErr" class="err"></p>
+      <p class="muted">第一次啟動時，密碼會儲存喺伺服器嘅 <code>data/admin-password.txt</code>。</p>
+    </div>
+  </div>
+
+  <div id="appView" class="wrap hidden">
+    <header class="ad">
+      <h1>🛠️ LP 258 Host 後台</h1>
+      <a class="btn small" href="/" target="_blank" rel="noopener" style="text-decoration:none">🏡 去小鎮</a>
+      <button class="btn small" id="refreshBtn">🔄 重新整理</button>
+      <button class="btn ghost small" id="logoutBtn">登出</button>
+    </header>
+    <nav class="ad-tabs" id="tabs"></nav>
+    <main id="main"></main>
+  </div>
+
+  <div id="modal" class="modal hidden"><div class="modal-card" id="modalCard"></div></div>
+  <div id="toasts" class="toasts"></div>
+
+  <script src="avatar.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

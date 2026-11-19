@@ -1,0 +1,13 @@
+{
+  "name": "lp258-town",
+  "version": "1.0.0",
+  "description": "LP 258 小鎮 — community web app with chibi avatars, chat, games, leaderboard, HQ events and admin backend",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
