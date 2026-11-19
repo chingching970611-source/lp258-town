@@ -1,12 +1,12 @@
 /* Chibi avatar renderer — draws a cute character with feet at (x, y). */
 (function () {
   const SKIN = ['#FFE3CC', '#F9D0B0', '#EDB98A', '#D49A6A', '#A86E45', '#7A4B2E'];
-  const HAIR = ['短髮', '刺蝟頭', '長髮', '冬菇頭', '丸子頭', '馬尾', '捲髮', '孖辮', '光頭'];
+  const HAIR_COUNT = 11;
   const HAIR_COLOR = ['#2B2118', '#5A3825', '#A0662F', '#E8C26B', '#F4A6B8', '#7FB3E8', '#B48CE0', '#E8573F', '#EDEDED'];
-  const OUTFIT = ['T恤', '連帽衫', '連身裙', '西裝', '吊帶褲'];
+  const OUTFIT_COUNT = 5;
   const OUTFIT_COLOR = ['#FF7A7A', '#FFB84D', '#FFE066', '#7ED957', '#4CC9F0', '#5B7CFA', '#B07CFF', '#FF8FCB', '#3D3D4E', '#FFFFFF'];
-  const FACE = ['開心', '大笑', '眨眼', '型格', '害羞', '驚訝', '嬲嬲', '愛心', '眼瞓'];
-  const ACC = ['無', '眼鏡', '貓耳', '皇冠', '花朵', '耳機', '蝴蝶結'];
+  const FACE_COUNT = 9;
+  const ACC_COUNT = 9;
   const INK = '#3A2A2A';
 
   function shade(hex, amt) {
@@ -40,78 +40,108 @@
     ctx.closePath();
   }
 
-  // ---------------------------------------------------------- hair
-  function hairCap(ctx, hc) {
+  // ---------------------------------------------------------- hair (cozy farm-sim chibi style: big fluffy dome, layered bangs, shine)
+  const TIPS = [[12, -57], [4, -59], [-4, -57], [-12, -59]];
+  function shine(ctx) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(-3, -66, 15, Math.PI * 1.18, Math.PI * 1.45); ctx.stroke();
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.arc(9, -71, 7, Math.PI * 1.25, Math.PI * 1.55); ctx.stroke();
+    ctx.restore();
+  }
+  function hairDome(ctx, hc, o = {}) {
+    const tips = o.tips || TIPS, side = o.side || 25, bottom = o.bottom || -42, valley = o.valley || -67;
     ctx.beginPath();
-    ctx.arc(0, -54, 23.5, Math.PI, Math.PI * 2);
-    ctx.lineTo(23.5, -49);
-    ctx.quadraticCurveTo(19, -62, 11, -60);
-    ctx.quadraticCurveTo(5, -65, -2, -60);
-    ctx.quadraticCurveTo(-9, -65, -15, -59);
-    ctx.quadraticCurveTo(-21, -61, -23.5, -49);
+    ctx.moveTo(-side, bottom);
+    ctx.quadraticCurveTo(-side - 6, -66, -19, -78);
+    ctx.quadraticCurveTo(0, -92, 19, -78);
+    ctx.quadraticCurveTo(side + 6, -66, side, bottom);
+    const inner = side - 6;
+    ctx.quadraticCurveTo(side - 2, -49, inner, -55);
+    let px = inner;
+    for (const [tx, ty] of tips) {
+      const vx = (px + tx) / 2;
+      ctx.quadraticCurveTo(px, valley + 2, vx, valley);
+      ctx.quadraticCurveTo(tx, valley + 2, tx, ty);
+      px = tx;
+    }
+    const vx = (px - inner) / 2;
+    ctx.quadraticCurveTo(px, valley + 2, vx, valley);
+    ctx.quadraticCurveTo(-inner, valley + 2, -inner, -55);
+    ctx.quadraticCurveTo(-side + 2, -49, -side, bottom);
     ctx.closePath();
     fillStroke(ctx, hc);
+    shine(ctx);
   }
+  function tie(ctx, x, y, r = 3.4) { circle(ctx, x, y, r); ctx.fillStyle = '#FF6B9A'; ctx.fill(); }
   function hairBack(ctx, style, hc) {
-    if (style === 2) { rr(ctx, -25, -66, 50, 44, 14); fillStroke(ctx, hc); }
-    else if (style === 3) { ellipse(ctx, 0, -52, 27.5, 24); fillStroke(ctx, hc); }
-    else if (style === 5) { ellipse(ctx, 25, -46, 8, 17, 0.45); fillStroke(ctx, hc); }
-    else if (style === 7) {
-      ellipse(ctx, -28, -44, 8, 16, -0.35); fillStroke(ctx, hc);
-      ellipse(ctx, 28, -44, 8, 16, 0.35); fillStroke(ctx, hc);
+    ctx.beginPath();
+    if (style === 2) { // long
+      ctx.moveTo(-26, -62); ctx.quadraticCurveTo(-33, -32, -25, -12); ctx.lineTo(25, -12); ctx.quadraticCurveTo(33, -32, 26, -62); ctx.closePath();
+      fillStroke(ctx, hc);
+    } else if (style === 3) { // bob
+      ctx.moveTo(-28, -60); ctx.quadraticCurveTo(-33, -34, -20, -34); ctx.lineTo(20, -34); ctx.quadraticCurveTo(33, -34, 28, -60); ctx.closePath();
+      fillStroke(ctx, hc);
+    } else if (style === 5) { // ponytail
+      ctx.moveTo(14, -76); ctx.quadraticCurveTo(44, -68, 36, -32); ctx.quadraticCurveTo(32, -22, 25, -29); ctx.quadraticCurveTo(31, -50, 10, -66); ctx.closePath();
+      fillStroke(ctx, hc);
+    } else if (style === 7) { // twin tails
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 18, -70); ctx.quadraticCurveTo(s * 46, -62, s * 37, -26); ctx.quadraticCurveTo(s * 33, -17, s * 27, -25); ctx.quadraticCurveTo(s * 33, -48, s * 16, -60); ctx.closePath();
+        fillStroke(ctx, hc);
+      }
     }
   }
   function hairFront(ctx, style, hc) {
     switch (style) {
-      case 0: hairCap(ctx, hc); break;
-      case 1: {
+      case 0: // fluffy + cowlick
+        hairDome(ctx, hc);
+        ctx.beginPath(); ctx.moveTo(-1, -87); ctx.quadraticCurveTo(3, -101, 15, -98); ctx.quadraticCurveTo(7, -95, 5, -87); ctx.closePath(); fillStroke(ctx, hc);
+        break;
+      case 1: { // spiky
         ctx.beginPath();
-        const pts = [[-23, -56], [-20, -80], [-11, -70], [-5, -88], [2, -72], [10, -86], [14, -70], [22, -79], [23.5, -56]];
+        const pts = [[-24, -62], [-32, -80], [-17, -77], [-15, -96], [-3, -83], [4, -100], [10, -83], [21, -94], [18, -77], [32, -78], [24, -62]];
         ctx.moveTo(pts[0][0], pts[0][1]);
         for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
-        ctx.closePath();
-        fillStroke(ctx, hc);
-        hairCap(ctx, hc);
+        ctx.closePath(); fillStroke(ctx, hc);
+        hairDome(ctx, hc, { tips: [[13, -56], [5, -59], [-3, -56], [-11, -59]], valley: -69 });
         break;
       }
-      case 2:
-        hairCap(ctx, hc);
-        rr(ctx, -25.5, -58, 7, 28, 4); fillStroke(ctx, hc);
-        rr(ctx, 18.5, -58, 7, 28, 4); fillStroke(ctx, hc);
+      case 2: hairDome(ctx, hc, { bottom: -30 }); break;
+      case 3: hairDome(ctx, hc, { tips: [[12, -58], [4, -58], [-4, -58], [-12, -58]], valley: -64, side: 26, bottom: -38 }); break;
+      case 4: // bun
+        circle(ctx, 0, -89, 11); fillStroke(ctx, hc);
+        hairDome(ctx, hc);
+        rr(ctx, -7, -82, 14, 4, 2); ctx.fillStyle = '#FF6B9A'; ctx.fill();
         break;
-      case 3:
-        hairCap(ctx, hc);
-        rr(ctx, -27, -60, 8, 22, 4); fillStroke(ctx, hc);
-        rr(ctx, 19, -60, 8, 22, 4); fillStroke(ctx, hc);
+      case 5: hairDome(ctx, hc); tie(ctx, 21, -70); break;
+      case 6: { // curly
+        ctx.fillStyle = hc; ctx.strokeStyle = shade(hc, -0.3); ctx.lineWidth = 1.4;
+        for (let a = Math.PI * 0.92; a <= Math.PI * 2.09; a += Math.PI / 8) { circle(ctx, Math.cos(a) * 25, -58 + Math.sin(a) * 23, 7.5); ctx.fill(); ctx.stroke(); }
+        for (const s of [-1, 1]) { circle(ctx, s * 25, -42, 6.5); ctx.fill(); ctx.stroke(); }
+        hairDome(ctx, hc, { tips: [[12, -58], [4, -59], [-4, -58], [-12, -59]], valley: -64 });
         break;
-      case 4:
-        circle(ctx, 0, -80, 10); fillStroke(ctx, hc);
-        hairCap(ctx, hc);
-        rr(ctx, -6, -73, 12, 4, 2); ctx.fillStyle = '#FF6B9A'; ctx.fill();
+      }
+      case 7: hairDome(ctx, hc); tie(ctx, -23, -66); tie(ctx, 23, -66); break;
+      case 8: { // side braid
+        hairDome(ctx, hc);
+        for (let i = 0; i < 5; i++) { ellipse(ctx, 21 + i * 1.6, -44 + i * 7, 5.6, 4.6); fillStroke(ctx, hc, 1.3); }
+        tie(ctx, 28.5, -9, 3);
         break;
-      case 5:
-        hairCap(ctx, hc);
-        circle(ctx, 20, -62, 3.6); ctx.fillStyle = '#FF6B9A'; ctx.fill();
-        break;
-      case 6: {
-        ctx.fillStyle = hc;
+      }
+      case 9: // side part
+        hairDome(ctx, hc, { tips: [[14, -63], [7, -61], [0, -59], [-8, -57], [-15, -55]], valley: -69 });
         ctx.strokeStyle = shade(hc, -0.3); ctx.lineWidth = 1.4;
-        for (let a = Math.PI * 0.95; a <= Math.PI * 2.06; a += Math.PI / 7) {
-          circle(ctx, Math.cos(a) * 21, -54 + Math.sin(a) * 21, 8); ctx.fill(); ctx.stroke();
-        }
-        for (const [x, y, r] of [[-13, -64, 7], [-4, -67, 7.5], [6, -66, 7.5], [15, -62, 6.5]]) { circle(ctx, x, y, r); ctx.fill(); ctx.stroke(); }
+        ctx.beginPath(); ctx.moveTo(10, -81); ctx.quadraticCurveTo(10, -74, 15, -67); ctx.stroke();
         break;
-      }
-      case 7:
-        hairCap(ctx, hc);
-        circle(ctx, -22, -58, 3.4); ctx.fillStyle = '#FF6B9A'; ctx.fill();
-        circle(ctx, 22, -58, 3.4); ctx.fill();
-        break;
-      case 8:
+      case 10: // bald
         ellipse(ctx, -7, -69, 6, 3, -0.4); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fill();
         break;
     }
   }
+
 
   // ---------------------------------------------------------- face
   function eyeDot(ctx, x) {
@@ -196,34 +226,49 @@
         break;
       case 2:
         for (const s of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(s * 21, -64); ctx.lineTo(s * 18, -85); ctx.lineTo(s * 5, -73); ctx.closePath(); fillStroke(ctx, hc);
-          ctx.beginPath(); ctx.moveTo(s * 18, -68); ctx.lineTo(s * 17, -80); ctx.lineTo(s * 10, -73); ctx.closePath(); ctx.fillStyle = '#FFB3C7'; ctx.fill();
+          ctx.beginPath(); ctx.moveTo(s * 23, -70); ctx.lineTo(s * 20, -93); ctx.lineTo(s * 6, -80); ctx.closePath(); fillStroke(ctx, hc);
+          ctx.beginPath(); ctx.moveTo(s * 19, -74); ctx.lineTo(s * 19, -87); ctx.lineTo(s * 11, -80); ctx.closePath(); ctx.fillStyle = '#FFB3C7'; ctx.fill();
         }
         break;
       case 3:
         ctx.beginPath();
-        ctx.moveTo(-11, -73); ctx.lineTo(-12, -86); ctx.lineTo(-5.5, -80); ctx.lineTo(0, -89); ctx.lineTo(5.5, -80); ctx.lineTo(12, -86); ctx.lineTo(11, -73);
+        ctx.moveTo(-11, -81); ctx.lineTo(-12, -95); ctx.lineTo(-5.5, -89); ctx.lineTo(0, -98); ctx.lineTo(5.5, -89); ctx.lineTo(12, -95); ctx.lineTo(11, -81);
         ctx.closePath(); fillStroke(ctx, '#FFD43B');
-        circle(ctx, 0, -78, 2); ctx.fillStyle = '#FF4D6D'; ctx.fill();
+        circle(ctx, 0, -87, 2); ctx.fillStyle = '#FF4D6D'; ctx.fill();
         break;
       case 4:
         ctx.fillStyle = '#FF8FCB';
-        for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; circle(ctx, 17 + Math.cos(a) * 4, -69 + Math.sin(a) * 4, 3.6); ctx.fill(); }
-        circle(ctx, 17, -69, 2.6); ctx.fillStyle = '#FFD43B'; ctx.fill();
+        for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; circle(ctx, 18 + Math.cos(a) * 4.5, -76 + Math.sin(a) * 4.5, 4); ctx.fill(); }
+        circle(ctx, 18, -76, 2.8); ctx.fillStyle = '#FFD43B'; ctx.fill();
         break;
       case 5:
         ctx.strokeStyle = '#4A4A5A'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(0, -54, 27, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
-        rr(ctx, -30, -60, 9, 15, 4); fillStroke(ctx, '#FF6B9A');
-        rr(ctx, 21, -60, 9, 15, 4); fillStroke(ctx, '#FF6B9A');
+        ctx.beginPath(); ctx.arc(0, -56, 30, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+        rr(ctx, -33, -60, 9, 15, 4); fillStroke(ctx, '#FF6B9A');
+        rr(ctx, 24, -60, 9, 15, 4); fillStroke(ctx, '#FF6B9A');
         break;
       case 6:
-        ctx.beginPath(); ctx.moveTo(15, -72); ctx.lineTo(5, -79); ctx.lineTo(6, -65); ctx.closePath(); fillStroke(ctx, '#FF4D6D');
-        ctx.beginPath(); ctx.moveTo(15, -72); ctx.lineTo(25, -79); ctx.lineTo(24, -65); ctx.closePath(); fillStroke(ctx, '#FF4D6D');
-        circle(ctx, 15, -72, 3); ctx.fillStyle = '#E8414B'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(16, -79); ctx.lineTo(5, -87); ctx.lineTo(6, -71); ctx.closePath(); fillStroke(ctx, '#FF4D6D');
+        ctx.beginPath(); ctx.moveTo(16, -79); ctx.lineTo(27, -87); ctx.lineTo(26, -71); ctx.closePath(); fillStroke(ctx, '#FF4D6D');
+        circle(ctx, 16, -79, 3.2); ctx.fillStyle = '#E8414B'; ctx.fill();
+        break;
+      case 7: // straw hat
+        ellipse(ctx, 0, -73, 40, 10); fillStroke(ctx, '#F2C46D');
+        ctx.beginPath(); ctx.moveTo(-21, -75); ctx.quadraticCurveTo(-21, -101, 0, -102); ctx.quadraticCurveTo(21, -101, 21, -75); ctx.closePath(); fillStroke(ctx, '#F7D488');
+        rr(ctx, -21, -83, 42, 7, 2); ctx.fillStyle = '#E8573F'; ctx.fill();
+        ctx.strokeStyle = 'rgba(160,110,40,.35)'; ctx.lineWidth = 1;
+        for (let i = -30; i <= 30; i += 10) { ctx.beginPath(); ctx.moveTo(i, -77); ctx.lineTo(i * 1.2, -69); ctx.stroke(); }
+        break;
+      case 8: // bandana
+        ctx.beginPath(); ctx.moveTo(-26, -66); ctx.quadraticCurveTo(0, -100, 26, -66); ctx.quadraticCurveTo(0, -76, -26, -66); ctx.closePath(); fillStroke(ctx, '#E8414B');
+        ctx.fillStyle = '#fff';
+        for (const [x, y] of [[-12, -78], [0, -84], [12, -78], [-5, -74], [7, -74]]) { circle(ctx, x, y, 1.6); ctx.fill(); }
+        ctx.beginPath(); ctx.moveTo(25, -67); ctx.lineTo(34, -72); ctx.lineTo(31, -62); ctx.closePath(); fillStroke(ctx, '#E8414B');
+        ctx.beginPath(); ctx.moveTo(25, -67); ctx.lineTo(35, -60); ctx.lineTo(27, -57); ctx.closePath(); fillStroke(ctx, '#E8414B');
         break;
     }
   }
+
 
   // ---------------------------------------------------------- body
   function draw(ctx, av, x, y, o = {}) {
@@ -305,8 +350,8 @@
 
   function random() {
     const r = (n) => Math.floor(Math.random() * n);
-    return { skin: r(SKIN.length), hair: r(HAIR.length - 1), hairColor: r(HAIR_COLOR.length), outfit: r(OUTFIT.length),
-      outfitColor: r(OUTFIT_COLOR.length), face: r(FACE.length), acc: r(ACC.length) };
+    return { skin: r(SKIN.length), hair: r(HAIR_COUNT - 1), hairColor: r(HAIR_COLOR.length), outfit: r(OUTFIT_COUNT),
+      outfitColor: r(OUTFIT_COLOR.length), face: r(FACE_COUNT), acc: r(ACC_COUNT - 2) };
   }
 
   const thumbCache = new Map();
@@ -319,7 +364,7 @@
     const ctx = c.getContext('2d');
     ctx.scale(dpr, dpr);
     if (full) draw(ctx, av, size / 2, size * 0.94, { scale: size / 100 });
-    else draw(ctx, av, size / 2, size * 1.45, { scale: size / 50 });
+    else draw(ctx, av, size / 2, size * 1.33, { scale: size / 76 });
     const url = c.toDataURL();
     if (thumbCache.size > 300) thumbCache.clear();
     thumbCache.set(key, url);
@@ -328,14 +373,15 @@
 
   window.Avatar = {
     draw, random, thumb, shade, rr, heart,
+    // Option lists; names come from I18N ('opts' → hairNames, outfitNames, faceNames, accNames)
     OPTIONS: {
-      skin: { label: '膚色', colors: SKIN },
-      hair: { label: '髮型', names: HAIR },
-      hairColor: { label: '髮色', colors: HAIR_COLOR },
-      outfit: { label: '衫款', names: OUTFIT },
-      outfitColor: { label: '衫色', colors: OUTFIT_COLOR },
-      face: { label: '表情', names: FACE },
-      acc: { label: '配飾', names: ACC },
+      skin: { colors: SKIN },
+      hair: { count: HAIR_COUNT },
+      hairColor: { colors: HAIR_COLOR },
+      outfit: { count: OUTFIT_COUNT },
+      outfitColor: { colors: OUTFIT_COLOR },
+      face: { count: FACE_COUNT },
+      acc: { count: ACC_COUNT },
     },
   };
 })();

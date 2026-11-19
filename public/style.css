@@ -13,7 +13,7 @@
   --purple: #A77BFF;
   --shadow: 0 6px 0 rgba(58, 46, 63, .08), 0 10px 30px rgba(58, 46, 63, .12);
   --r: 18px;
-  font-family: 'Baloo 2', 'Noto Sans TC', system-ui, sans-serif;
+  font-family: 'Baloo 2', 'Noto Sans SC', system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #8FD97A; color: var(--ink); overflow: hidden; -webkit-tap-highlight-color: transparent; }
@@ -214,3 +214,19 @@ input, textarea, select { font: inherit; color: var(--ink); }
   .chat-log { width: 72vw; }
   .zone-btn { bottom: 140px; }
 }
+
+/* ---------- language, rooms, quiz ---------- */
+.lang-btn { font-weight: 800; }
+.card-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.room-view h3 { margin: 4px 0 10px; font-size: 19px; }
+.room-canvas { width: 100%; aspect-ratio: 3 / 2; display: block; border-radius: 18px; background: #FFF3E6; box-shadow: 0 3px 0 rgba(58,46,63,.08); }
+.room-job { margin: 10px 0 4px; line-height: 1.5; }
+.cz-h { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+.quiz-progress { display: flex; gap: 5px; margin-bottom: 6px; }
+.quiz-progress i { flex: 1; height: 6px; border-radius: 3px; background: #F2E8DA; }
+.quiz-progress i.on { background: var(--primary); }
+.quiz-answers { display: flex; flex-direction: column; gap: 8px; }
+.quiz-answers .btn { text-align: left; white-space: normal; padding: 12px 14px; border: 2px solid var(--line); box-shadow: none; }
+.quiz-answers .btn:hover { border-color: var(--primary); background: #FFF0F4; }
+.modal-card .room-view { width: 100%; }
+@media (min-width: 641px) { .modal-card:has(.room-view) { width: min(520px, 100%); } }

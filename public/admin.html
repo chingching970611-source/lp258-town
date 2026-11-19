@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-HK">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>LP 258 Host 後台</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+  <title data-i18n-doc="ad.title">LP 258 Host</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
   <style>
     html, body { overflow: auto; background: #FFF6EA; }
@@ -41,21 +41,22 @@
 <body>
   <div id="loginView" class="login hidden">
     <div class="card">
-      <h2 style="margin:0 0 4px">🛠️ Host 後台</h2>
-      <p class="muted" style="margin:0 0 12px">只限 Host / 管理員登入</p>
-      <input id="pw" class="inp" type="password" placeholder="管理員密碼" autocomplete="current-password">
-      <button id="loginBtn" class="btn primary big" style="margin-top:10px">登入</button>
+      <div style="display:flex;align-items:center"><h2 style="margin:0 0 4px;flex:1" data-i18n="ad.title"></h2><button class="btn ghost small lang-btn" type="button" data-i18n="lang.switch"></button></div>
+      <p class="muted" style="margin:0 0 12px" data-i18n="ad.only"></p>
+      <input id="pw" class="inp" type="password" data-i18n-ph="ad.pwPh" autocomplete="current-password">
+      <button id="loginBtn" class="btn primary big" style="margin-top:10px" data-i18n="ad.login"></button>
       <p id="loginErr" class="err"></p>
-      <p class="muted">第一次啟動時，密碼會儲存喺伺服器嘅 <code>data/admin-password.txt</code>。</p>
+      <p class="muted" data-i18n="ad.pwHint"></p>
     </div>
   </div>
 
   <div id="appView" class="wrap hidden">
     <header class="ad">
-      <h1>🛠️ LP 258 Host 後台</h1>
-      <a class="btn small" href="/" target="_blank" rel="noopener" style="text-decoration:none">🏡 去小鎮</a>
-      <button class="btn small" id="refreshBtn">🔄 重新整理</button>
-      <button class="btn ghost small" id="logoutBtn">登出</button>
+      <h1 data-i18n="ad.title"></h1>
+      <a class="btn small" href="/" target="_blank" rel="noopener" style="text-decoration:none" data-i18n="ad.toTown"></a>
+      <button class="btn small" id="refreshBtn" data-i18n="ad.refresh"></button>
+      <button class="btn small lang-btn" type="button" data-i18n="lang.switch"></button>
+      <button class="btn ghost small" id="logoutBtn" data-i18n="ad.logout"></button>
     </header>
     <nav class="ad-tabs" id="tabs"></nav>
     <main id="main"></main>
@@ -64,7 +65,9 @@
   <div id="modal" class="modal hidden"><div class="modal-card" id="modalCard"></div></div>
   <div id="toasts" class="toasts"></div>
 
+  <script src="i18n.js"></script>
   <script src="avatar.js"></script>
+  <script src="room.js"></script>
   <script src="admin.js"></script>
 </body>
 </html>
