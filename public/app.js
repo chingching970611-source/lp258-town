@@ -83,10 +83,12 @@
   const isPhone = () => window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 700;
   const season = () => (state.settings && Season.ORDER.includes(state.settings.season) ? state.settings.season : Season.fromDate());
   const theme = () => Season.THEMES[season()];
+  Avatar.season = Season.fromDate();
 
   // ---------- music (starts on first tap, because browsers block autoplay)
   let musicOn = store.get('lp258_music') !== '0';
   function updateSeasonUi() {
+    Avatar.season = season();
     const sp = $('#seasonPill'); if (sp) sp.textContent = Season.ICON[season()] + ' ' + t('season.' + season());
     const mb = $('#musicBtn'); if (mb) { mb.textContent = musicOn ? '🎵' : '🔇'; mb.title = musicOn ? t('music.off') : t('music.on'); }
   }
@@ -1073,35 +1075,72 @@
     return wrap;
   }
 
-  // ---------- HQ events
+  // ---------- HQ events, polls, payments
   function eventEnd(e) { return Date.parse(e.endDate || '') || Date.parse(e.date) + 3 * 3600000; }
+  const fileUrl = (id) => `/api/file/${encodeURIComponent(id)}?t=${encodeURIComponent(state.token)}`;
+  const money = (n) => (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n)));
+  const payBy = (e) => e.payDeadline || e.date;
   function renderHQ(c) {
     const now = Date.now();
     const upcoming = c.events.filter((e) => eventEnd(e) > now);
     const past = c.events.filter((e) => eventEnd(e) <= now).reverse();
-    const mine = new Set(c.myRsvps);
     const wrap = el('div', {});
+    const owing = upcoming.filter((e) => e.mine && e.mine.status === 'unpaid');
+    for (const e of owing) wrap.append(el('div', { class: 'card pay-alert' }, t('pay.banner', { title: e.title, date: fmtDate(payBy(e)), fee: money(e.fee) })));
     if (state.announcements.length) {
       wrap.append(el('div', { class: 'card', style: 'background:#FFF3C4' }, el('b', {}, t('hq.news')),
-        state.announcements.slice(-3).reverse().map((a) => el('div', { style: 'margin-top:4px' }, a.text, ' ', el('span', { class: 'muted' }, fmtDate(a.createdAt, { month: 'short', day: 'numeric' }))))));
+        state.announcements.slice(-3).reverse().map((a) => el('div', { style: 'margin-top:4px' }, a.text, ' ', el('span', { class: 'muted' }, fmtDate(a.editedAt || a.createdAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))))));
+    }
+    if (c.polls && c.polls.length) {
+      wrap.append(el('div', { class: 'section-t' }, t('poll.title')));
+      for (const p of c.polls) wrap.append(pollCard(p));
     }
     wrap.append(el('div', { class: 'section-t' }, t('hq.upcoming', { n: upcoming.length })));
     if (!upcoming.length) wrap.append(el('div', { class: 'empty' }, t('hq.none')));
-    for (const e of upcoming) wrap.append(eventCard(e, c, mine, false));
+    for (const e of upcoming) wrap.append(eventCard(e, false));
     if (past.length) {
       wrap.append(el('div', { class: 'section-t' }, t('hq.past', { n: past.length })));
-      for (const e of past) wrap.append(eventCard(e, c, mine, true));
+      for (const e of past) wrap.append(eventCard(e, true));
     }
     if ('Notification' in window && Notification.permission === 'default') wrap.append(el('button', { class: 'btn ghost small', onclick: askNotify }, t('hq.notify')));
     return wrap;
   }
-  function eventCard(e, c, mine, isPast) {
+  function pollCard(p) {
+    const voted = p.myVote !== null && p.myVote !== undefined;
+    const showResults = voted || p.closed;
+    return el('div', { class: 'card poll' },
+      el('div', { class: 'card-top' }, el('h3', {}, '🗳️ ' + p.question), el('span', { class: 'tag ' + (p.closed ? '' : 'p') }, p.closed ? t('poll.closed') : t('poll.votes', { n: p.total }))),
+      p.closesAt && !p.closed ? el('div', { class: 'muted' }, t('poll.closes', { date: fmtDate(p.closesAt) })) : null,
+      el('div', { class: 'poll-opts' }, p.options.map((o, i) => {
+        const pct = p.total ? Math.round((p.counts[i] / p.total) * 100) : 0;
+        const b = el('button', { class: 'poll-opt' + (p.myVote === i ? ' mine' : ''), disabled: p.closed },
+          showResults ? el('i', { style: `width:${pct}%` }) : null,
+          el('span', {}, (p.myVote === i ? '✅ ' : '') + o),
+          showResults ? el('b', {}, `${pct}% · ${p.counts[i]}`) : null);
+        b.onclick = async () => {
+          try { await api('POST', '/api/poll/vote', { id: p.id, choice: i }); toast(t('poll.thanks'), 'good'); loadContent(); } catch (e) { toast(e.message, 'bad'); }
+        };
+        return b;
+      })),
+      el('div', { class: 'muted', style: 'margin-top:4px' }, p.closed ? '' : voted ? t('poll.voted') : t('poll.tapToVote')));
+  }
+  function eventCard(e, isPast) {
     const d = new Date(e.date);
-    const going = mine.has(e.id);
+    const mine = e.mine;
     const start = Date.parse(e.date);
+    const paid = Number(e.fee) > 0;
+    const full = e.capacity && e.count >= e.capacity && !mine;
     const hasAddr = e.address && !/^[（(]/.test(e.address);
     const L = I18N.locale();
-    return el('div', { class: 'card event', style: isPast ? 'opacity:.92' : '' },
+    const joinBtn = el('button', { class: 'btn small ' + (mine ? 'ghost' : 'primary'), disabled: !!full || (mine && (mine.status === 'submitted' || mine.status === 'paid')), onclick: async () => {
+      try {
+        const r = await api('POST', '/api/event/rsvp', { id: e.id });
+        toast(r.going ? (paid ? t('event.joinedOk') : t('event.toastOn')) : (paid ? t('event.leftOk') : t('event.toastOff')), r.going ? 'good' : '');
+        if (r.going && 'Notification' in window && Notification.permission === 'default') askNotify();
+        loadContent();
+      } catch (err) { toast(err.message, 'bad'); }
+    } }, full ? t('event.full') : mine ? (paid ? t('event.leave') : t('event.rsvpOn')) : paid ? t('event.joinPaid', { fee: money(e.fee) }) : t('event.rsvp'));
+    return el('div', { class: 'card event' + (mine ? ' joined' : ''), style: isPast ? 'opacity:.92' : '' },
       el('div', { class: 'date-badge' },
         el('div', { class: 'm' }, d.toLocaleDateString(L, { month: 'short' })),
         el('div', { class: 'd' }, d.getDate()),
@@ -1112,20 +1151,60 @@
         el('div', { class: 'meta' }, '🕒 ' + fmtDate(e.date) + (e.endDate ? ' – ' + fmtDate(e.endDate, { hour: '2-digit', minute: '2-digit' }) : '')),
         e.venue ? el('div', { class: 'meta' }, '📍 ' + e.venue) : null,
         e.address ? el('div', { class: 'meta' }, '🏠 ' + e.address) : null,
+        el('div', { class: 'chips' },
+          el('span', { class: 'tag ' + (paid ? 'y' : 'g') }, paid ? t('event.fee', { fee: money(e.fee) }) : t('event.free')),
+          el('span', { class: 'tag' }, e.capacity ? t('event.quota', { n: e.count, cap: e.capacity }) : t('event.going', { n: e.count })),
+          mine ? el('span', { class: 'tag ' + (mine.status === 'unpaid' ? 'r' : mine.status === 'submitted' ? 'p' : 'g') }, t('pay.status.' + mine.status)) : null),
         e.content ? el('div', { class: 'content' }, e.content) : null,
         isPast && e.record ? el('div', { class: 'record' }, el('b', {}, t('event.record')), el('br'), e.record) : null,
-        el('div', { class: 'meta' }, t('event.going', { n: c.rsvpCounts[e.id] || 0 })),
-        !isPast ? el('div', { class: 'actions' },
-          el('button', { class: 'btn small ' + (going ? 'green' : 'primary'), onclick: async () => {
-            try {
-              const r = await api('POST', '/api/event/rsvp', { id: e.id });
-              toast(r.going ? t('event.toastOn') : t('event.toastOff'), r.going ? 'good' : '');
-              if (r.going && 'Notification' in window && Notification.permission === 'default') askNotify();
-              loadContent();
-            } catch (err) { toast(err.message, 'bad'); }
-          } }, going ? t('event.rsvpOn') : t('event.rsvp')),
+        !isPast && paid && mine ? payBox(e) : null,
+        !isPast ? el('div', { class: 'actions' }, joinBtn,
           el('button', { class: 'btn small', onclick: () => downloadIcs(e) }, t('event.ics')),
-          hasAddr ? el('a', { class: 'btn small', href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.address), target: '_blank', rel: 'noopener', style: 'text-decoration:none' }, t('event.map')) : null) : null));
+          hasAddr ? el('a', { class: 'btn small', href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.address), target: '_blank', rel: 'noopener', style: 'text-decoration:none' }, t('event.map')) : null) : null,
+        e.updatedAt ? el('div', { class: 'updated' }, t('event.updated', { date: fmtDate(e.updatedAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })) : null));
+  }
+  function payBox(e) {
+    const m = e.mine;
+    const file = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
+    const upBtn = el('button', { class: 'btn small ' + (m.status === 'unpaid' ? 'primary' : 'ghost'), onclick: () => file.click() }, m.status === 'unpaid' ? t('pay.upload') : t('pay.reupload'));
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      upBtn.disabled = true; upBtn.textContent = t('pay.uploading');
+      try {
+        const image = await shrinkImage(f, 1200, 0.8);
+        await api('POST', '/api/event/proof', { id: e.id, image });
+        toast(t('pay.uploaded'), 'good');
+        loadContent();
+      } catch (err) { toast(err.message, 'bad'); upBtn.disabled = false; upBtn.textContent = t('pay.upload'); }
+    };
+    const status = m.status === 'paid' ? t('pay.paidAt', { date: fmtDate(m.paidAt || Date.now()) })
+      : m.status === 'submitted' ? t('pay.status.submitted') + ' · ' + t('pay.submittedAt', { date: fmtDate(m.submittedAt) })
+      : (m.note ? t('pay.rejected', { note: m.note }) : t('pay.deadline', { date: fmtDate(payBy(e)) }));
+    return el('div', { class: 'pay-box ' + m.status },
+      el('b', {}, t('pay.title')),
+      el('div', { class: 'pay-status' }, status),
+      m.status !== 'paid' ? el('div', { class: 'pay-how' },
+        e.qrFile ? el('figure', {}, el('img', { src: fileUrl(e.qrFile), alt: 'QR', class: 'qr', onclick: () => window.open(fileUrl(e.qrFile), '_blank') }), el('figcaption', { class: 'muted' }, t('pay.scan'))) : el('div', { class: 'muted' }, t('pay.noQr')),
+        e.payInfo ? el('div', { class: 'pay-info' }, e.payInfo) : null) : null,
+      m.proofFile ? el('a', { href: fileUrl(m.proofFile), target: '_blank', rel: 'noopener', class: 'muted small-link' }, '🧾 ' + t('pay.myProof')) : null,
+      m.status !== 'paid' ? el('div', { class: 'actions' }, upBtn, file) : null);
+  }
+  function shrinkImage(fileObj, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(fileObj);
+      img.onload = () => {
+        const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(t('err.bad_image'))); };
+      img.src = url;
+    });
   }
   function downloadIcs(e) {
     const f = (ts) => new Date(ts).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -1152,27 +1231,35 @@
     const c = state.content;
     if (!c) return;
     const now = Date.now();
-    const mine = new Set(c.myRsvps);
     reminderTimers.forEach(clearTimeout);
     reminderTimers = [];
-    const soon = c.events.filter((e) => mine.has(e.id) && Date.parse(e.date) > now && Date.parse(e.date) - now < 86400000);
+    const joined = c.events.filter((e) => e.mine);
+    const owing = joined.filter((e) => e.mine.status === 'unpaid' && eventEnd(e) > now);
+    const soon = joined.filter((e) => Date.parse(e.date) > now && Date.parse(e.date) - now < 86400000);
     const bar = $('#reminderBar');
-    if (soon.length) {
+    if (owing.length) {
+      const e = owing[0];
+      bar.textContent = t('pay.banner', { title: e.title, date: fmtDate(payBy(e)), fee: money(e.fee) });
+      bar.classList.remove('hidden');
+      bar.classList.add('pay');
+      bar.onclick = () => { openPanel('hq'); };
+    } else if (soon.length) {
       const e = soon[0];
       bar.textContent = t('remind.bar', { title: e.title, rel: relTime(Date.parse(e.date) - now), venue: e.venue || '' });
-      bar.classList.remove('hidden');
+      bar.classList.remove('hidden', 'pay');
       bar.onclick = () => { bar.classList.add('hidden'); openPanel('hq'); };
     } else bar.classList.add('hidden');
-    for (const e of c.events) {
-      if (!mine.has(e.id)) continue;
+    for (const e of joined) {
       const at = Date.parse(e.date) - 3600000 - now;
       if (at > 0 && at < 86400000) reminderTimers.push(setTimeout(() => { const s = t('remind.hour', { title: e.title }); toast(s, 'info', 9000); notify(s); }, at));
     }
-    const week = c.events.filter((e) => Date.parse(e.date) > now && Date.parse(e.date) - now < 7 * 86400000).length;
+    const week = c.events.filter((e) => Date.parse(e.date) > now && Date.parse(e.date) - now < 7 * 86400000).length + owing.length;
     const badge = $('#hqBadge');
-    badge.textContent = week;
+    badge.textContent = owing.length ? '💰' : week;
     badge.classList.toggle('hidden', !week);
   }
+  // keep countdowns and "updated" dates current while the panel is open
+  setInterval(() => { if (state.content) checkReminders(); if (currentPanel === 'hq' && !document.hidden) renderPanel(); }, 60000);
 
   // ---------- me (room / look / account)
   function renderMe() {

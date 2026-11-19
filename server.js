@@ -22,7 +22,8 @@ const PW_FILE = path.join(DATA_DIR, 'admin-password.txt');
 const TZ_OFFSET_H = Number.isFinite(Number(process.env.TZ_OFFSET_HOURS)) && process.env.TZ_OFFSET_HOURS !== undefined ? Number(process.env.TZ_OFFSET_HOURS) : 8;
 const WORLD = { w: 1600, h: 1020 };
 const SPAWN = { x: 800, y: 585 };
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+const FILES_FILE = path.join(DATA_DIR, 'files.json');
 
 const uid = (n = 8) => crypto.randomBytes(n).toString('hex');
 const now = () => Date.now();
@@ -50,7 +51,8 @@ function seedDb() {
       { id: uid(4), title: '开幕派对 Opening Party', venue: 'LP 258 HQ', address: '（请在后台更新地址）', date: localAt(-14, 20), endDate: localAt(-14, 23),
         content: '小镇正式开幕！', record: '当晚有 40 位朋友出席，玩了 3 轮 Quiz，冠军是 Team Rainbow 🌈 谢谢大家支持！', createdAt: now() },
     ],
-    rsvps: {},
+    attendance: {},
+    polls: [],
     quiz: [
       { id: uid(4), question: '地球上最大的海洋是？', options: ['大西洋', '太平洋', '印度洋', '北冰洋'], answer: 1, points: 10 },
       { id: uid(4), question: '一年有多少个星期？', options: ['48', '50', '52', '54'], answer: 2, points: 10 },
@@ -96,6 +98,21 @@ const V1_SEED = {
 function migrate(d) {
   d.meta = d.meta || { v: 1 };
   if (d.meta.v >= DB_VERSION) return false;
+  if (d.meta.v < 2) migrateV1(d);
+  if (d.meta.v < 3) {
+    d.attendance = d.attendance || {};
+    for (const [eid, ids] of Object.entries(d.rsvps || {})) {
+      const a = d.attendance[eid] || (d.attendance[eid] = {});
+      for (const id of ids) if (!a[id]) a[id] = { status: 'going', joinedAt: Date.now() };
+    }
+    delete d.rsvps;
+    d.polls = d.polls || [];
+    d.meta.v = 3;
+  }
+  console.log('🔧 Upgraded data to version', DB_VERSION);
+  return true;
+}
+function migrateV1(d) {
   const seed = seedDb();
   const fixTime = (iso, h, m) => {
     const t = new Date(iso);
@@ -126,9 +143,7 @@ function migrate(d) {
   for (const a of d.announcements || []) if (a.text === V1_SEED.announcement) a.text = seed.announcements[0].text;
   // v1 hairstyle #8 was "bald"; in v2 bald moved to #10 (#8 is now a braid).
   for (const u of Object.values(d.users || {})) if (u.avatar && u.avatar.hair === 8) u.avatar.hair = 10;
-  d.meta.v = DB_VERSION;
-  console.log('🔧 Upgraded data to version', DB_VERSION);
-  return true;
+  d.meta.v = 2;
 }
 
 function loadDb() {
@@ -149,6 +164,26 @@ function loadDb() {
 }
 
 const db = loadDb();
+// Uploaded images (payment QR codes, payment screenshots) live apart from the main data so it stays small.
+let files = {};
+try { if (fs.existsSync(FILES_FILE)) files = JSON.parse(fs.readFileSync(FILES_FILE, 'utf8')); } catch { files = {}; }
+let filesDirty = false;
+function saveFiles() {
+  fs.writeFileSync(FILES_FILE + '.tmp', JSON.stringify(files));
+  fs.renameSync(FILES_FILE + '.tmp', FILES_FILE);
+  filesDirty = true;
+  gistSchedule();
+}
+function storeImage(dataUrl, kind, owner) {
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!m) throw httpErr(400, 'bad_image');
+  if (m[2].length > 1600000) throw httpErr(413, 'image_too_large');
+  const id = uid(8);
+  files[id] = { type: m[1], data: m[2], kind, owner: owner || null, at: now() };
+  saveFiles();
+  return id;
+}
+function dropFile(id) { if (id && files[id]) { delete files[id]; saveFiles(); } }
 const tokens = new Map();
 const rebuildTokens = () => { tokens.clear(); for (const u of Object.values(db.users)) tokens.set(u.token, u.id); };
 rebuildTokens();
@@ -168,6 +203,7 @@ function saveNow() {
 const GIST_ID = (process.env.GIST_ID || '').trim();
 const GH_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const GIST_FILE = 'lp258-db.json';
+const GIST_FILES_FILE = 'lp258-files.json';
 const useGist = !!(GIST_ID && GH_TOKEN);
 let gistTimer = null, gistBusy = false, gistDirty = false;
 const ghHeaders = () => ({ Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'lp258-town', 'Content-Type': 'application/json' });
@@ -175,10 +211,10 @@ async function gistLoad() {
   const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: ghHeaders() });
   if (!r.ok) throw new Error(`Gist load failed: HTTP ${r.status}`);
   const g = await r.json();
-  const f = g.files && g.files[GIST_FILE];
-  if (!f) return null;
-  const text = f.truncated ? await (await fetch(f.raw_url, { headers: ghHeaders() })).text() : f.content;
-  const trimmed = (text || '').trim();
+  const read = async (f) => (f ? ((f.truncated ? await (await fetch(f.raw_url, { headers: ghHeaders() })).text() : f.content) || '').trim() : '');
+  const ff = await read(g.files && g.files[GIST_FILES_FILE]);
+  if (ff && ff !== '{}') { try { files = JSON.parse(ff); fs.writeFileSync(FILES_FILE, ff); } catch {} }
+  const trimmed = await read(g.files && g.files[GIST_FILE]);
   return trimmed && trimmed !== '{}' ? JSON.parse(trimmed) : null;
 }
 async function gistSave() {
@@ -186,8 +222,11 @@ async function gistSave() {
   if (gistBusy) { gistDirty = true; return; }
   gistBusy = true; gistDirty = false;
   try {
-    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { method: 'PATCH', headers: ghHeaders(), body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(db) } } }) });
-    if (!r.ok) { console.error('Gist save failed: HTTP', r.status); gistDirty = true; }
+    const out = { [GIST_FILE]: { content: JSON.stringify(db) } };
+    const withFiles = filesDirty;
+    if (withFiles) { out[GIST_FILES_FILE] = { content: JSON.stringify(files) || '{}' }; filesDirty = false; }
+    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { method: 'PATCH', headers: ghHeaders(), body: JSON.stringify({ files: out }) });
+    if (!r.ok) { console.error('Gist save failed: HTTP', r.status); gistDirty = true; if (withFiles) filesDirty = true; }
   } catch (e) { console.error('Gist save failed:', e.message); gistDirty = true; }
   gistBusy = false;
   if (gistDirty) gistSchedule();
@@ -225,8 +264,9 @@ const loginAttempts = new Map();
 
 // ---------------------------------------------------------------- presence
 const online = new Map(); // userId -> { x, y, conns:Set<res>, leaveTimer, lastMove }
-const AV_OPTS = { skin: 6, hair: 11, hairColor: 9, outfit: 5, outfitColor: 10, face: 9, acc: 9 };
-const ROOM_TYPES = ['farmer', 'chef', 'artist', 'coder', 'musician', 'explorer', 'florist', 'bookworm'];
+const AV_OPTS = { skin: 6, hair: 11, hairColor: 9, outfit: 5, outfitColor: 10, face: 9, acc: 9, seasonal: 2 };
+const ROOM_TYPES = ['farmer', 'chef', 'artist', 'coder', 'musician', 'explorer', 'florist', 'bookworm',
+  'photographer', 'creator', 'lawyer', 'marketing', 'sales', 'admin', 'founder', 'student'];
 const ROOM_WALLS = 6;
 function cleanAvatar(a) {
   const o = {};
@@ -349,13 +389,38 @@ setInterval(() => {
     if (!start || e.remindedAt || start < t || start - t > 3600000) continue;
     e.remindedAt = t;
     save();
-    for (const id of db.rsvps[e.id] || []) sendTo(id, 'notice', { key: 'notice.soon', params: { title: e.title, venue: e.venue || '' }, eventId: e.id });
+    for (const id of Object.keys(att(e.id))) sendTo(id, 'notice', { key: 'notice.soon', params: { title: e.title, venue: e.venue || '' }, eventId: e.id });
   }
 }, 60000);
 
+// Attendance: free events → 'going'; paid events → 'unpaid' → 'submitted' (screenshot uploaded) → 'paid' (host confirmed).
+const att = (eid) => db.attendance[eid] || (db.attendance[eid] = {});
+const isPaidEvent = (e) => Number(e.fee) > 0;
+const payDeadline = (e) => Date.parse(e.payDeadline || '') || Date.parse(e.date);
+const REMINDER_ROUNDS = [7, 3, 1]; // payment reminders: days before the payment deadline
+function paymentReminders() {
+  const t = now();
+  for (const e of db.events) {
+    if (!isPaidEvent(e)) continue;
+    const dl = payDeadline(e);
+    if (!dl || dl < t - 86400000) continue;
+    for (const [memberId, rec] of Object.entries(att(e.id))) {
+      if (!rec || rec.status !== 'unpaid') continue; // stops as soon as they upload / are marked paid
+      const due = REMINDER_ROUNDS.filter((d) => t >= dl - d * 86400000).length;
+      if ((rec.reminders || 0) >= due || !online.has(memberId)) continue; // offline members see the payment banner when they open the town
+      rec.reminders = due;
+      save();
+      sendTo(memberId, 'notice', { key: 'notice.payDue', params: { title: e.title, fee: e.fee, date: new Date(dl).toISOString(), n: due, total: REMINDER_ROUNDS.length }, eventId: e.id });
+    }
+  }
+}
+setInterval(paymentReminders, Number(process.env.REMINDER_INTERVAL_MS) || 5 * 60000);
+
 // ---------------------------------------------------------------- content schemas (admin CRUD)
 const SCHEMAS = {
-  events: { title: ['line', 80, true], venue: ['line', 100], address: ['line', 200], date: ['date', true], endDate: ['date'], content: ['str', 3000], record: ['str', 5000] },
+  events: { title: ['line', 80, true], venue: ['line', 100], address: ['line', 200], date: ['date', true], endDate: ['date'], content: ['str', 3000], record: ['str', 5000],
+    fee: ['money'], payInfo: ['str', 600], payDeadline: ['date'], capacity: ['int', 0, 100000] },
+  polls: { question: ['str', 300, true], options: ['options', 6], closesAt: ['date'] },
   quiz: { question: ['str', 300, true], options: ['options'], answer: ['int', 0, 3], points: ['int', 0, 1000] },
   riddles: { question: ['str', 300, true], answer: ['line', 200, true], hint: ['line', 200], points: ['int', 0, 1000] },
   challenges: { title: ['line', 100, true], description: ['str', 1500], points: ['int', 0, 10000], active: ['bool'] },
@@ -377,8 +442,11 @@ function cleanItem(col, input) {
       const t = v ? Date.parse(v) : NaN;
       if (spec[1] && !t) throw httpErr(400, 'invalid_date');
       out[k] = t ? new Date(t).toISOString() : '';
+    } else if (type === 'money') {
+      const n = Math.round(Number(v) * 100) / 100;
+      out[k] = Number.isFinite(n) && n > 0 ? Math.min(n, 1e6) : 0;
     } else if (type === 'options') {
-      const arr = (Array.isArray(v) ? v : []).map((x) => line(x, 120)).filter(Boolean).slice(0, 4);
+      const arr = (Array.isArray(v) ? v : []).map((x) => line(x, 120)).filter(Boolean).slice(0, spec[1] || 4);
       if (arr.length < 2) throw httpErr(400, 'min_options');
       out[k] = arr;
     }
@@ -399,7 +467,7 @@ function readBody(req) {
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > 64 * 1024) { reject(httpErr(413, 'too_large')); req.destroy(); return; }
+      if (size > 2.5 * 1024 * 1024) { reject(httpErr(413, 'too_large')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -529,13 +597,21 @@ route('POST /api/room', async (req, res, body) => {
 route('GET /api/content', async (req, res) => {
   const u = needUser(req);
   const s = solvedOf(u.id);
-  const rsvpCounts = {};
-  for (const e of db.events) rsvpCounts[e.id] = (db.rsvps[e.id] || []).length;
+  const pollOut = (p) => {
+    const counts = p.options.map(() => 0);
+    for (const v of Object.values(p.votes || {})) if (counts[v] !== undefined) counts[v]++;
+    return { id: p.id, question: p.question, options: p.options, closesAt: p.closesAt || '', counts, total: counts.reduce((a, b) => a + b, 0),
+      myVote: p.votes && p.votes[u.id] !== undefined ? p.votes[u.id] : null, closed: !!(p.closesAt && Date.parse(p.closesAt) < now()), createdAt: p.createdAt, updatedAt: p.updatedAt };
+  };
   json(res, 200, {
     events: [...db.events].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-      .map(({ id, title, venue, address, date, endDate, content, record }) => ({ id, title, venue, address, date, endDate, content, record })),
-    myRsvps: db.events.filter((e) => (db.rsvps[e.id] || []).includes(u.id)).map((e) => e.id),
-    rsvpCounts,
+      .map(({ id, title, venue, address, date, endDate, content, record, fee, payInfo, payDeadline: pd, capacity, qrFile, updatedAt, createdAt }) => {
+        const mine = att(id)[u.id];
+        return { id, title, venue, address, date, endDate, content, record, fee: fee || 0, payInfo: payInfo || '', payDeadline: pd || '', capacity: capacity || 0,
+          qrFile: qrFile || null, updatedAt: updatedAt || createdAt || null, count: Object.keys(att(id)).length,
+          mine: mine ? { status: mine.status, proofFile: mine.proofFile || null, submittedAt: mine.submittedAt || null, paidAt: mine.paidAt || null, note: mine.note || '' } : null };
+      }),
+    polls: [...db.polls].reverse().map(pollOut),
     quiz: db.quiz.map((q) => {
       const st = s.quiz[q.id];
       return { id: q.id, question: q.question, options: q.options, points: q.points, result: st || null, answer: st ? q.answer : undefined };
@@ -608,11 +684,45 @@ route('POST /api/event/rsvp', async (req, res, body) => {
   const u = needUser(req);
   const e = db.events.find((x) => x.id === body.id);
   if (!e) throw httpErr(404, 'not_found');
-  const list = db.rsvps[e.id] || (db.rsvps[e.id] = []);
-  const i = list.indexOf(u.id);
-  if (i >= 0) list.splice(i, 1); else list.push(u.id);
+  const a = att(e.id);
+  const rec = a[u.id];
+  if (rec) {
+    if (rec.status === 'submitted' || rec.status === 'paid') throw httpErr(409, 'paid_cannot_leave');
+    delete a[u.id];
+  } else {
+    if (e.capacity && Object.keys(a).length >= e.capacity) throw httpErr(409, 'event_full');
+    a[u.id] = { status: isPaidEvent(e) ? 'unpaid' : 'going', joinedAt: now(), reminders: 0 };
+  }
   save();
-  json(res, 200, { going: i < 0, count: list.length });
+  json(res, 200, { going: !rec, count: Object.keys(a).length });
+});
+
+route('POST /api/event/proof', async (req, res, body) => {
+  const u = needUser(req);
+  const e = db.events.find((x) => x.id === body.id);
+  if (!e || !isPaidEvent(e)) throw httpErr(404, 'not_found');
+  const rec = att(e.id)[u.id];
+  if (!rec) throw httpErr(409, 'join_first');
+  if (rec.status === 'paid') throw httpErr(409, 'already_paid');
+  const fid = storeImage(body.image, 'proof', u.id);
+  dropFile(rec.proofFile);
+  Object.assign(rec, { status: 'submitted', proofFile: fid, submittedAt: now(), note: '' });
+  save();
+  json(res, 200, { ok: true });
+});
+
+route('POST /api/poll/vote', async (req, res, body) => {
+  const u = needUser(req);
+  const p = db.polls.find((x) => x.id === body.id);
+  if (!p) throw httpErr(404, 'not_found');
+  if (p.closesAt && Date.parse(p.closesAt) < now()) throw httpErr(409, 'poll_closed');
+  const c = Math.floor(Number(body.choice));
+  if (!(c >= 0 && c < p.options.length)) throw httpErr(400, 'bad_request');
+  p.votes = p.votes || {};
+  p.votes[u.id] = c;
+  save();
+  broadcast('content', { col: 'polls' });
+  json(res, 200, { ok: true });
 });
 
 route('POST /api/live/answer', async (req, res, body) => {
@@ -649,7 +759,10 @@ route('GET /api/admin/overview', async (req, res) => {
   json(res, 200, {
     users,
     onlineCount: online.size,
-    events: [...db.events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).map((e) => ({ ...e, rsvpNames: (db.rsvps[e.id] || []).map(name) })),
+    events: [...db.events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).map((e) => ({ ...e,
+      attendees: Object.entries(att(e.id)).map(([id, r]) => ({ userId: id, nickname: name(id), ...r })).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0)) })),
+    polls: [...db.polls].reverse().map((p) => { const counts = p.options.map(() => 0); for (const v of Object.values(p.votes || {})) if (counts[v] !== undefined) counts[v]++; return { id: p.id, question: p.question, options: p.options, closesAt: p.closesAt || '', counts, createdAt: p.createdAt, updatedAt: p.updatedAt }; }),
+    pendingPayments: db.events.reduce((n, e) => n + Object.values(att(e.id)).filter((r) => r.status === 'submitted').length, 0),
     quiz: db.quiz, riddles: db.riddles, challenges: db.challenges,
     submissions: [...db.submissions].reverse().map((s) => ({ ...s, nickname: name(s.userId), challenge: (db.challenges.find((c) => c.id === s.challengeId) || {}).title || '—' })),
     announcements: [...db.announcements].reverse(),
@@ -667,10 +780,23 @@ route('POST /api/admin/save', async (req, res, body) => {
   const item = cleanItem(col, body.item || {});
   const list = db[col];
   const existing = body.item && body.item.id ? list.find((x) => x.id === body.item.id) : null;
+  if (col === 'events') {
+    if (body.item.qrImage) { item.qrFile = storeImage(body.item.qrImage, 'qr', null); if (existing) dropFile(existing.qrFile); }
+    else if (body.item.removeQr && existing) { dropFile(existing.qrFile); item.qrFile = null; }
+  }
+  item.updatedAt = now();
   if (existing) {
     if (col === 'events' && existing.date !== item.date) delete existing.remindedAt;
+    if (col === 'events' && existing.payDeadline !== item.payDeadline) for (const r of Object.values(att(existing.id))) r.reminders = 0;
+    if (col === 'polls' && existing.votes) for (const [k, v] of Object.entries(existing.votes)) if (v >= item.options.length) delete existing.votes[k];
     Object.assign(existing, item);
-  } else list.push({ id: uid(4), ...item, createdAt: now() });
+  } else {
+    const created = { id: uid(4), ...item, createdAt: now() };
+    if (col === 'polls') created.votes = {};
+    list.push(created);
+    if (col === 'events') broadcast('notice', { key: 'notice.newEvent', params: { title: created.title, date: created.date } });
+    if (col === 'polls') broadcast('notice', { key: 'notice.newPoll', params: { title: created.question } });
+  }
   save();
   broadcast('content', { col });
   json(res, 200, { ok: true });
@@ -682,8 +808,12 @@ route('POST /api/admin/delete', async (req, res, body) => {
   if (!SCHEMAS[col]) throw httpErr(400, 'bad_request');
   const i = db[col].findIndex((x) => x.id === body.id);
   if (i < 0) throw httpErr(404, 'not_found');
-  db[col].splice(i, 1);
-  if (col === 'events') delete db.rsvps[body.id];
+  const [removed] = db[col].splice(i, 1);
+  if (col === 'events') {
+    for (const r of Object.values(att(body.id))) dropFile(r.proofFile);
+    delete db.attendance[body.id];
+    dropFile(removed.qrFile);
+  }
   save();
   broadcast('content', { col });
   json(res, 200, { ok: true });
@@ -726,6 +856,28 @@ route('POST /api/admin/user', async (req, res, body) => {
   json(res, 200, { ok: true });
 });
 
+route('POST /api/admin/attendance', async (req, res, body) => {
+  needAdmin(req);
+  const e = db.events.find((x) => x.id === body.eventId);
+  if (!e) throw httpErr(404, 'not_found');
+  const a = att(e.id);
+  const rec = a[body.userId];
+  if (body.status === 'remove') { if (rec) { dropFile(rec.proofFile); delete a[body.userId]; } }
+  else {
+    if (!rec) throw httpErr(404, 'not_found');
+    if (body.status === 'paid') {
+      Object.assign(rec, { status: 'paid', paidAt: now(), note: '' });
+      sendTo(body.userId, 'notice', { key: 'notice.paidOk', params: { title: e.title }, eventId: e.id });
+    } else if (body.status === 'unpaid') {
+      Object.assign(rec, { status: 'unpaid', paidAt: null, note: line(body.note, 120), reminders: 0 });
+      sendTo(body.userId, 'notice', { key: 'notice.paidNo', params: { title: e.title }, eventId: e.id });
+    } else throw httpErr(400, 'bad_request');
+  }
+  save();
+  sendTo(body.userId, 'content', { col: 'events' });
+  json(res, 200, { ok: true });
+});
+
 route('POST /api/admin/user/delete', async (req, res, body) => {
   needAdmin(req);
   const u = db.users[body.id];
@@ -735,7 +887,8 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
   delete db.users[u.id];
   delete db.solved[u.id];
   delete db.minigame[u.id];
-  for (const k of Object.keys(db.rsvps)) db.rsvps[k] = db.rsvps[k].filter((id) => id !== u.id);
+  for (const a of Object.values(db.attendance)) if (a[u.id]) { dropFile(a[u.id].proofFile); delete a[u.id]; }
+  for (const p of db.polls) if (p.votes) delete p.votes[u.id];
   db.submissions = db.submissions.filter((s) => s.userId !== u.id);
   save();
   boardsChanged();
@@ -773,7 +926,7 @@ route('POST /api/admin/remind', async (req, res, body) => {
   needAdmin(req);
   const e = db.events.find((x) => x.id === body.id);
   if (!e) throw httpErr(404, 'not_found');
-  const ids = db.rsvps[e.id] || [];
+  const ids = Object.keys(att(e.id));
   let reached = 0;
   for (const id of ids) if (online.has(id)) { reached++; sendTo(id, 'notice', { key: 'notice.remind', params: { title: e.title, date: e.date, venue: e.venue || '' }, eventId: e.id }); }
   json(res, 200, { rsvp: ids.length, reached });
@@ -879,6 +1032,15 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/healthz') return json(res, 200, { ok: true, online: online.size });
     if (url.pathname === '/api/stream' && req.method === 'GET') return handleStream(req, res, url);
+    if (url.pathname.startsWith('/api/file/') && req.method === 'GET') {
+      const f = files[url.pathname.slice(10)];
+      const tok = url.searchParams.get('t') || '';
+      const isAdmin = (adminSessions.get(tok) || 0) > now();
+      const member = userFromToken(tok);
+      if (!f || !(isAdmin || (member && !member.banned && (f.kind === 'qr' || f.owner === member.id)))) return json(res, 404, { error: 'not_found' });
+      res.writeHead(200, { 'Content-Type': f.type, 'Cache-Control': 'private, max-age=86400' });
+      return res.end(Buffer.from(f.data, 'base64'));
+    }
     const fn = routes[`${req.method} ${url.pathname}`];
     if (fn) {
       const body = req.method === 'POST' ? await readBody(req) : {};

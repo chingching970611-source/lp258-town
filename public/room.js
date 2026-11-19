@@ -1,16 +1,20 @@
 /* Personal rooms: personality quiz → job → cozy room scene. Depends on avatar.js + i18n.js. */
 (function () {
-  const TYPES = ['farmer', 'chef', 'artist', 'coder', 'musician', 'explorer', 'florist', 'bookworm'];
-  const ICON = { farmer: '🌾', chef: '🍳', artist: '🎨', coder: '💻', musician: '🎸', explorer: '🧭', florist: '💐', bookworm: '📚' };
+  const TYPES = ['farmer', 'chef', 'artist', 'coder', 'musician', 'explorer', 'florist', 'bookworm',
+    'photographer', 'creator', 'lawyer', 'marketing', 'sales', 'admin', 'founder', 'student'];
+  const ICON = { farmer: '🌾', chef: '🍳', artist: '🎨', coder: '💻', musician: '🎸', explorer: '🧭', florist: '💐', bookworm: '📚',
+    photographer: '📷', creator: '🎬', lawyer: '⚖️', marketing: '📈', sales: '🤝', admin: '🗂️', founder: '🚀', student: '🎓' };
   const WALLS = ['#FFE3EC', '#E3F0FF', '#E8F7E0', '#FFF3C4', '#EFE6FF', '#FFE8D6'];
-  const RUG = { farmer: '#C9E7A8', chef: '#FFD1A6', artist: '#FFC2E0', coder: '#BFD4FF', musician: '#E0C8FF', explorer: '#F2D29B', florist: '#FFD6E5', bookworm: '#D9C3A5' };
-  // Each answer option adds a point to these personality types (same order as the questions in i18n.js).
+  const RUG = { farmer: '#C9E7A8', chef: '#FFD1A6', artist: '#FFC2E0', coder: '#BFD4FF', musician: '#E0C8FF', explorer: '#F2D29B', florist: '#FFD6E5', bookworm: '#D9C3A5',
+    photographer: '#D6DCE8', creator: '#FFC9D9', lawyer: '#C9B49A', marketing: '#FFE3A3', sales: '#BFE6D2', admin: '#D3E4F5', founder: '#E2D4FF', student: '#CDEBFF' };
+  // Each answer option adds a point to these personality types (same order as the 6 questions in i18n.js).
   const SCORING = [
-    [['explorer', 'farmer'], ['chef', 'florist'], ['artist', 'florist'], ['bookworm', 'coder']],
-    [['farmer', 'coder'], ['chef', 'musician'], ['artist', 'musician'], ['florist', 'bookworm']],
-    [['farmer', 'florist'], ['chef'], ['artist', 'musician'], ['bookworm', 'coder']],
-    [['explorer', 'chef'], ['coder', 'bookworm'], ['musician', 'florist'], ['artist', 'explorer']],
-    [['farmer', 'florist'], ['explorer'], ['musician', 'bookworm'], ['artist', 'coder', 'chef']],
+    [['explorer', 'photographer', 'farmer'], ['chef', 'florist', 'sales'], ['artist', 'creator', 'musician'], ['bookworm', 'student', 'coder']],
+    [['farmer', 'admin', 'lawyer'], ['sales', 'chef', 'creator'], ['artist', 'marketing', 'musician', 'photographer'], ['coder', 'lawyer', 'student', 'bookworm']],
+    [['farmer', 'explorer', 'photographer', 'florist'], ['sales', 'marketing', 'chef'], ['founder', 'creator', 'artist', 'musician'], ['admin', 'lawyer', 'coder', 'bookworm', 'student']],
+    [['founder', 'sales', 'explorer', 'chef'], ['coder', 'lawyer', 'admin'], ['marketing', 'florist', 'musician'], ['artist', 'student', 'bookworm', 'creator']],
+    [['farmer', 'florist'], ['explorer', 'photographer', 'sales'], ['marketing', 'lawyer', 'creator'], ['artist', 'founder', 'coder', 'chef']],
+    [['founder', 'sales', 'marketing'], ['creator', 'musician', 'photographer'], ['admin', 'lawyer', 'farmer'], ['student', 'bookworm', 'coder', 'explorer']],
   ];
   function score(answers) {
     const s = Object.fromEntries(TYPES.map((t) => [t, 0]));
@@ -90,6 +94,76 @@
       }
       box(ctx, 30, 150, 80, 52, '#C26A6A', 14); box(ctx, 38, 130, 64, 34, '#D98080', 12);
       emoji(ctx, '📖', 70, 156, 24); emoji(ctx, '🕯️', 130, 120, 24); emoji(ctx, '☕', 128, 196, 20); emoji(ctx, '✒️', 300, 200, 22);
+    },
+    photographer(ctx, t) {
+      const pics = [[150, 26, 44, 34, '#FFB3C7'], [200, 20, 34, 44, '#9BD18A'], [240, 30, 48, 32, '#8FD3F7'], [294, 24, 34, 40, '#FFD43B']];
+      for (const [x, y, w, h, c] of pics) { box(ctx, x, y, w, h, '#fff', 2); box(ctx, x + 3, y + 3, w - 6, h - 10, c, 1); }
+      ctx.strokeStyle = '#3A3A48'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(60, 214); ctx.lineTo(74, 150); ctx.lineTo(88, 214); ctx.moveTo(74, 150); ctx.lineTo(74, 214); ctx.stroke();
+      emoji(ctx, '📷', 74, 138, 34);
+      box(ctx, 110, 90, 40, 52, '#F5F5F5', 6); ctx.fillStyle = 'rgba(255,250,210,' + (0.5 + 0.3 * Math.sin(t / 500)) + ')'; ctx.fillRect(114, 94, 32, 44);
+      ctx.fillStyle = '#3A3A48'; ctx.fillRect(128, 142, 4, 72);
+      emoji(ctx, '🎞️', 300, 200, 24);
+    },
+    creator(ctx, t) {
+      ctx.strokeStyle = 'rgba(255,255,240,' + (0.85 + 0.15 * Math.sin(t / 400)) + ')'; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(72, 120, 30, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#D0D0D8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(72, 120, 35, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#3A3A48'; ctx.fillRect(70, 150, 4, 64);
+      box(ctx, 62, 106, 20, 30, '#2B2D42', 4);
+      box(ctx, 160, 34, 64, 26, '#E8414B', 8); ctx.fillStyle = '#fff'; ctx.font = '800 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('● LIVE', 192, 47);
+      emoji(ctx, '🎙️', 130, 196, 28); emoji(ctx, '💡', 270, 56, 26);
+      ['❤️', '👍', '⭐'].forEach((e, i) => { const k = ((t / 1800 + i / 3) % 1); ctx.globalAlpha = 1 - k; emoji(ctx, e, 300 + Math.sin(t / 500 + i) * 8, 190 - k * 90, 16); ctx.globalAlpha = 1; });
+    },
+    lawyer(ctx, t) {
+      box(ctx, 150, 24, 90, 128, '#7A4B2E', 6);
+      for (let r = 0; r < 4; r++) { box(ctx, 154, 28 + r * 31, 82, 27, '#5A3825', 2); for (let b = 0; b < 7; b++) box(ctx, 157 + b * 11.2, 32 + r * 31, 9, 23, ['#8B1E2D', '#1F3A5F', '#2E5A3A', '#8B1E2D', '#6B4A1F', '#1F3A5F', '#8B1E2D'][(b + r) % 7], 1); }
+      box(ctx, 270, 30, 54, 40, '#C9A04C', 3); box(ctx, 274, 34, 46, 32, '#FFF8E6', 2); emoji(ctx, '📜', 297, 50, 18);
+      box(ctx, 24, 150, 120, 12, '#5A3825', 4); box(ctx, 32, 162, 10, 52, '#4A2E1E', 2); box(ctx, 126, 162, 10, 52, '#4A2E1E', 2);
+      emoji(ctx, '⚖️', 60, 134, 30); emoji(ctx, '📁', 108, 140, 22); emoji(ctx, '🖋️', 300, 200, 22);
+    },
+    marketing(ctx, t) {
+      box(ctx, 150, 22, 150, 96, '#fff', 6); ctx.strokeStyle = '#C9CED9'; ctx.lineWidth = 2; ctx.strokeRect(150, 22, 150, 96);
+      [20, 34, 28, 48, 62].forEach((h, i) => box(ctx, 166 + i * 24, 104 - h - Math.sin(t / 900 + i) * 2, 16, h, ['#4CC9F0', '#5B7CFA', '#B07CFF', '#FF7A9C', '#FFB84D'][i], 2));
+      ctx.strokeStyle = '#E8414B'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(170, 80); ctx.lineTo(214, 66); ctx.lineTo(240, 72); ctx.lineTo(290, 36); ctx.stroke();
+      [['#FFF3B0', 40, 30], ['#FFD1E0', 76, 40], ['#C8F0FF', 46, 66], ['#D9F5DC', 84, 74]].forEach(([c, x, y]) => box(ctx, x, y, 28, 24, c, 2));
+      box(ctx, 24, 160, 110, 10, '#E3B47C', 4); box(ctx, 34, 170, 8, 44, '#C98B52', 2); box(ctx, 116, 170, 8, 44, '#C98B52', 2);
+      emoji(ctx, '💻', 70, 146, 26); emoji(ctx, '📣', 300, 196, 28);
+    },
+    sales(ctx, t) {
+      box(ctx, 24, 150, 130, 12, '#B57A45', 4); box(ctx, 34, 162, 8, 52, '#9A6438', 2); box(ctx, 136, 162, 8, 52, '#9A6438', 2);
+      emoji(ctx, '☎️', 54, 136, 26); emoji(ctx, '💼', 120, 138, 26);
+      ['#E8414B', '#fff', '#E8414B', '#fff'].forEach((c, i) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(200, 70, 34 - i * 8, 0, Math.PI * 2); ctx.fill(); });
+      emoji(ctx, '🎯', 212, 60, 22);
+      shelf(ctx, 254, 70, 80); emoji(ctx, '🏆', 274, 54, 26); emoji(ctx, '🥇', 312, 56, 22);
+      emoji(ctx, '🤝', 300, 196, 30);
+    },
+    admin(ctx, t) {
+      box(ctx, 26, 100, 62, 114, '#9AA3B5', 6); for (let i = 0; i < 3; i++) { box(ctx, 30, 106 + i * 36, 54, 30, '#B8C0CF', 4); box(ctx, 48, 118 + i * 36, 18, 5, '#6B7385', 2); }
+      box(ctx, 110, 150, 120, 10, '#E3B47C', 4); box(ctx, 118, 160, 8, 54, '#C98B52', 2); box(ctx, 214, 160, 8, 54, '#C98B52', 2);
+      emoji(ctx, '🗂️', 136, 136, 24); emoji(ctx, '📋', 170, 138, 22); emoji(ctx, '🖨️', 206, 136, 24);
+      box(ctx, 240, 26, 80, 70, '#fff', 4); box(ctx, 240, 26, 80, 16, '#E8414B', 4);
+      ctx.fillStyle = '#C9CED9'; for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) ctx.fillRect(246 + c * 15, 48 + r * 15, 10, 10);
+      ctx.fillStyle = '#5B7CFA'; ctx.fillRect(276, 63, 10, 10);
+      emoji(ctx, '☕', 300, 200, 20);
+    },
+    founder(ctx, t) {
+      box(ctx, 150, 22, 150, 96, '#fff', 6); ctx.strokeStyle = '#C9CED9'; ctx.lineWidth = 2; ctx.strokeRect(150, 22, 150, 96);
+      ctx.fillStyle = '#5B7CFA'; ctx.font = '800 13px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText('IDEA → MVP → GO!', 158, 44);
+      ctx.strokeStyle = '#7ED957'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(162, 104); ctx.quadraticCurveTo(220, 100, 284, 66); ctx.stroke();
+      emoji(ctx, '🚀', 288 + Math.sin(t / 400) * 2, 60 - Math.abs(Math.sin(t / 400)) * 3, 22); emoji(ctx, '💡', 200, 80, 20);
+      ctx.fillStyle = '#B07CFF'; ctx.beginPath(); ctx.ellipse(70, 196, 42, 22, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#C9A6FF'; ctx.beginPath(); ctx.ellipse(70, 186, 30, 14, 0, 0, Math.PI * 2); ctx.fill();
+      emoji(ctx, '💻', 70, 168, 26); emoji(ctx, '☕', 126, 200, 20); emoji(ctx, '🪴', 300, 190, 30);
+    },
+    student(ctx, t) {
+      box(ctx, 24, 150, 130, 12, '#E3B47C', 4); box(ctx, 34, 162, 8, 52, '#C98B52', 2); box(ctx, 136, 162, 8, 52, '#C98B52', 2);
+      ['#FF7A7A', '#5B7CFA', '#7ED957', '#FFB84D'].forEach((c, i) => box(ctx, 40 - i * 1.5, 140 - i * 8, 40, 7, c, 2));
+      emoji(ctx, '✏️', 104, 140, 20); emoji(ctx, '💡', 132, 112, 22);
+      shelf(ctx, 160, 68, 110); emoji(ctx, '🎓', 180, 52, 26); emoji(ctx, '📚', 220, 52, 24); emoji(ctx, '🌍', 254, 52, 22);
+      box(ctx, 284, 26, 46, 56, '#fff', 3); box(ctx, 284, 26, 46, 12, '#5B7CFA', 3);
+      ctx.fillStyle = '#E8414B'; ctx.font = '800 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A+', 307, 60);
+      emoji(ctx, '🎒', 300, 196, 30);
     },
   };
 
