@@ -59,6 +59,7 @@
     const p = { ...(m.params || {}) };
     if (m.key === 'sys.room') p.job = jobLabel(p.job) || p.job;
     if (p.date) p.date = fmtDate(p.date);
+    if (p.fee !== undefined) p.cur = cur();
     let s = t(m.key, p);
     if (m.key === 'sys.liveEnd' && p.first) s += t('sys.liveFirst', p);
     return s;
@@ -162,8 +163,17 @@
   function logout(reason) {
     if (es) es.close();
     store.del('lp258_token');
-    if (reason) alert(reason);
-    location.reload();
+    if (reason) { toast(reason, 'bad', 4000); setTimeout(() => location.reload(), 2500); } else location.reload();
+  }
+  function askConfirm(text) {
+    return new Promise((resolve) => {
+      const ov = el('div', { class: 'modal dlg' });
+      const done = (v) => { ov.remove(); resolve(v); };
+      ov.append(el('div', { class: 'modal-card dlg-card' }, el('p', { class: 'dlg-text' }, text),
+        el('div', { class: 'dlg-acts' }, el('button', { class: 'btn ghost', onclick: () => done(false) }, t('dlg.cancel')), el('button', { class: 'btn primary', onclick: () => done(true) }, t('dlg.ok')))));
+      ov.addEventListener('pointerdown', (e) => { if (e.target === ov) done(false); });
+      document.body.append(ov);
+    });
   }
 
   // ============================================================ town / realtime
@@ -237,6 +247,7 @@
     on('poke', (d) => { toast(t('toast.poke', { name: d.name }), 'info', 4500); logLine(el('div', { class: 'dm' }, '👋 ', t('log.poke', { name: d.name }))); });
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
     on('live', (d) => openLive(d));
+    on('chatRemoved', (d) => { state.chat = state.chat.filter((m) => m.id !== d.id); if (currentPanel === 'chat') renderPanel(); });
     on('settings', (d) => { const before = season(); state.settings = d; updateSeasonUi(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) Season.Music.play(season()); } });
     on('liveCount', (d) => { if (state.live) { state.live.count = d.count; const c = $('#liveCount'); if (c) c.textContent = t('live.count', { n: d.count }); } });
     on('liveResult', showLiveResult);
@@ -252,6 +263,7 @@
   async function loadContent() {
     try {
       state.content = await api('GET', '/api/content');
+      if (state.content.settings) { state.settings = state.content.settings; updateSeasonUi(); }
       checkReminders();
       if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && gameRunning)) renderPanel();
     } catch (e) { if (e.status === 401) logout(t('err.relogin')); }
@@ -428,7 +440,7 @@
       txt(t('event.next'), sx + 90, sy + 15, 11, '#FFD43B', 800);
       ctx.font = `700 15px ${FONT}`;
       txt(fitText(ne ? ne.title : t('event.tbc'), 160), sx + 90, sy + 34, 15, '#fff', 700);
-      txt(ne ? fmtDate(ne.date) : '—', sx + 90, sy + 52, 11, '#C8D2FF', 600);
+      txt(ne ? (ne.tbc ? t('event.dateTbc') : fmtDate(ne.date)) : '—', sx + 90, sy + 52, 11, '#C8D2FF', 600);
       R(ctx, x + 170, y + 170, 150, 44, 8); ctx.fillStyle = '#B57A45'; ctx.fill();
       R(ctx, x + 170, y + 166, 150, 12, 6); ctx.fillStyle = '#D69A60'; ctx.fill();
       R(ctx, x + 225, y + 146, 40, 24, 4); ctx.fillStyle = '#DDE3F0'; ctx.fill();
@@ -1076,17 +1088,19 @@
   }
 
   // ---------- HQ events, polls, payments
-  function eventEnd(e) { return Date.parse(e.endDate || '') || Date.parse(e.date) + 3 * 3600000; }
+  function eventEnd(e) { if (e.tbc) return Infinity; return Date.parse(e.endDate || '') || Date.parse(e.date) + 3 * 3600000; }
   const fileUrl = (id) => `/api/file/${encodeURIComponent(id)}?t=${encodeURIComponent(state.token)}`;
   const money = (n) => (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n)));
-  const payBy = (e) => e.payDeadline || e.date;
+  const payBy = (e) => e.payDeadline || (e.tbc ? '' : e.date);
+  const cur = () => (state.settings && state.settings.currency) || 'RM';
+  const payByText = (e) => (payBy(e) ? fmtDate(payBy(e)) : t('event.dateTbc'));
   function renderHQ(c) {
     const now = Date.now();
     const upcoming = c.events.filter((e) => eventEnd(e) > now);
     const past = c.events.filter((e) => eventEnd(e) <= now).reverse();
     const wrap = el('div', {});
     const owing = upcoming.filter((e) => e.mine && e.mine.status === 'unpaid');
-    for (const e of owing) wrap.append(el('div', { class: 'card pay-alert' }, t('pay.banner', { title: e.title, date: fmtDate(payBy(e)), fee: money(e.fee) })));
+    for (const e of owing) wrap.append(el('div', { class: 'card pay-alert' }, t('pay.banner', { title: e.title, date: payByText(e), fee: money(e.fee), cur: cur() })));
     if (state.announcements.length) {
       wrap.append(el('div', { class: 'card', style: 'background:#FFF3C4' }, el('b', {}, t('hq.news')),
         state.announcements.slice(-3).reverse().map((a) => el('div', { style: 'margin-top:4px' }, a.text, ' ', el('span', { class: 'muted' }, fmtDate(a.editedAt || a.createdAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))))));
@@ -1095,9 +1109,14 @@
       wrap.append(el('div', { class: 'section-t' }, t('poll.title')));
       for (const p of c.polls) wrap.append(pollCard(p));
     }
-    wrap.append(el('div', { class: 'section-t' }, t('hq.upcoming', { n: upcoming.length })));
-    if (!upcoming.length) wrap.append(el('div', { class: 'empty' }, t('hq.none')));
-    for (const e of upcoming) wrap.append(eventCard(e, false));
+    const dated = upcoming.filter((e) => !e.tbc), soon = upcoming.filter((e) => e.tbc);
+    wrap.append(el('div', { class: 'section-t' }, t('hq.upcoming', { n: dated.length })));
+    if (!dated.length) wrap.append(el('div', { class: 'empty' }, t('hq.none')));
+    for (const e of dated) wrap.append(eventCard(e, false));
+    if (soon.length) {
+      wrap.append(el('div', { class: 'section-t' }, t('hq.soon', { n: soon.length })));
+      for (const e of soon) wrap.append(eventCard(e, false));
+    }
     if (past.length) {
       wrap.append(el('div', { class: 'section-t' }, t('hq.past', { n: past.length })));
       for (const e of past) wrap.append(eventCard(e, true));
@@ -1125,7 +1144,7 @@
       el('div', { class: 'muted', style: 'margin-top:4px' }, p.closed ? '' : voted ? t('poll.voted') : t('poll.tapToVote')));
   }
   function eventCard(e, isPast) {
-    const d = new Date(e.date);
+    const d = new Date(e.tbc ? Date.now() : e.date);
     const mine = e.mine;
     const start = Date.parse(e.date);
     const paid = Number(e.fee) > 0;
@@ -1139,27 +1158,29 @@
         if (r.going && 'Notification' in window && Notification.permission === 'default') askNotify();
         loadContent();
       } catch (err) { toast(err.message, 'bad'); }
-    } }, full ? t('event.full') : mine ? (paid ? t('event.leave') : t('event.rsvpOn')) : paid ? t('event.joinPaid', { fee: money(e.fee) }) : t('event.rsvp'));
-    return el('div', { class: 'card event' + (mine ? ' joined' : ''), style: isPast ? 'opacity:.92' : '' },
-      el('div', { class: 'date-badge' },
-        el('div', { class: 'm' }, d.toLocaleDateString(L, { month: 'short' })),
-        el('div', { class: 'd' }, d.getDate()),
-        el('div', { class: 'w' }, d.toLocaleDateString(L, { weekday: 'short' }))),
+    } }, full ? t('event.full') : mine ? (paid ? t('event.leave') : t('event.rsvpOn')) : paid ? t('event.joinPaid', { fee: money(e.fee), cur: cur() }) : t('event.rsvp'));
+    return el('div', { class: 'card event' + (mine ? ' joined' : '') + (e.tbc ? ' tbc' : ''), style: isPast ? 'opacity:.92' : '' },
+      e.tbc ? el('div', { class: 'date-badge tbc' }, el('div', { class: 'm' }, '✨'), el('div', { class: 'd' }, 'TBC'), el('div', { class: 'w' }, 'Soon'))
+        : el('div', { class: 'date-badge' },
+          el('div', { class: 'm' }, d.toLocaleDateString(L, { month: 'short' })),
+          el('div', { class: 'd' }, d.getDate()),
+          el('div', { class: 'w' }, d.toLocaleDateString(L, { weekday: 'short' }))),
       el('div', { class: 'info' },
         el('h3', {}, e.title),
-        !isPast ? el('div', { class: 'countdown' }, start > Date.now() ? '⏳ ' + relTime(start - Date.now()) : t('event.live')) : null,
-        el('div', { class: 'meta' }, '🕒 ' + fmtDate(e.date) + (e.endDate ? ' – ' + fmtDate(e.endDate, { hour: '2-digit', minute: '2-digit' }) : '')),
+        e.tbc ? el('div', { class: 'countdown' }, t('event.tbcLong'))
+          : !isPast ? el('div', { class: 'countdown' }, start > Date.now() ? '⏳ ' + relTime(start - Date.now()) : t('event.live')) : null,
+        e.tbc ? null : el('div', { class: 'meta' }, '🕒 ' + fmtDate(e.date) + (e.endDate ? ' – ' + fmtDate(e.endDate, { hour: '2-digit', minute: '2-digit' }) : '')),
         e.venue ? el('div', { class: 'meta' }, '📍 ' + e.venue) : null,
         e.address ? el('div', { class: 'meta' }, '🏠 ' + e.address) : null,
         el('div', { class: 'chips' },
-          el('span', { class: 'tag ' + (paid ? 'y' : 'g') }, paid ? t('event.fee', { fee: money(e.fee) }) : t('event.free')),
+          el('span', { class: 'tag ' + (paid ? 'y' : 'g') }, paid ? t('event.fee', { fee: money(e.fee), cur: cur() }) : t('event.free')),
           el('span', { class: 'tag' }, e.capacity ? t('event.quota', { n: e.count, cap: e.capacity }) : t('event.going', { n: e.count })),
           mine ? el('span', { class: 'tag ' + (mine.status === 'unpaid' ? 'r' : mine.status === 'submitted' ? 'p' : 'g') }, t('pay.status.' + mine.status)) : null),
         e.content ? el('div', { class: 'content' }, e.content) : null,
         isPast && e.record ? el('div', { class: 'record' }, el('b', {}, t('event.record')), el('br'), e.record) : null,
         !isPast && paid && mine ? payBox(e) : null,
         !isPast ? el('div', { class: 'actions' }, joinBtn,
-          el('button', { class: 'btn small', onclick: () => downloadIcs(e) }, t('event.ics')),
+          e.tbc ? null : el('button', { class: 'btn small', onclick: () => downloadIcs(e) }, t('event.ics')),
           hasAddr ? el('a', { class: 'btn small', href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.address), target: '_blank', rel: 'noopener', style: 'text-decoration:none' }, t('event.map')) : null) : null,
         e.updatedAt ? el('div', { class: 'updated' }, t('event.updated', { date: fmtDate(e.updatedAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })) : null));
   }
@@ -1180,7 +1201,7 @@
     };
     const status = m.status === 'paid' ? t('pay.paidAt', { date: fmtDate(m.paidAt || Date.now()) })
       : m.status === 'submitted' ? t('pay.status.submitted') + ' · ' + t('pay.submittedAt', { date: fmtDate(m.submittedAt) })
-      : (m.note ? t('pay.rejected', { note: m.note }) : t('pay.deadline', { date: fmtDate(payBy(e)) }));
+      : (m.note ? t('pay.rejected', { note: m.note }) : t('pay.deadline', { date: payByText(e) }));
     return el('div', { class: 'pay-box ' + m.status },
       el('b', {}, t('pay.title')),
       el('div', { class: 'pay-status' }, status),
@@ -1235,11 +1256,11 @@
     reminderTimers = [];
     const joined = c.events.filter((e) => e.mine);
     const owing = joined.filter((e) => e.mine.status === 'unpaid' && eventEnd(e) > now);
-    const soon = joined.filter((e) => Date.parse(e.date) > now && Date.parse(e.date) - now < 86400000);
+    const soon = joined.filter((e) => !e.tbc && Date.parse(e.date) > now && Date.parse(e.date) - now < 86400000);
     const bar = $('#reminderBar');
     if (owing.length) {
       const e = owing[0];
-      bar.textContent = t('pay.banner', { title: e.title, date: fmtDate(payBy(e)), fee: money(e.fee) });
+      bar.textContent = t('pay.banner', { title: e.title, date: payByText(e), fee: money(e.fee), cur: cur() });
       bar.classList.remove('hidden');
       bar.classList.add('pay');
       bar.onclick = () => { openPanel('hq'); };
@@ -1250,10 +1271,11 @@
       bar.onclick = () => { bar.classList.add('hidden'); openPanel('hq'); };
     } else bar.classList.add('hidden');
     for (const e of joined) {
+      if (e.tbc) continue;
       const at = Date.parse(e.date) - 3600000 - now;
       if (at > 0 && at < 86400000) reminderTimers.push(setTimeout(() => { const s = t('remind.hour', { title: e.title }); toast(s, 'info', 9000); notify(s); }, at));
     }
-    const week = c.events.filter((e) => Date.parse(e.date) > now && Date.parse(e.date) - now < 7 * 86400000).length + owing.length;
+    const week = c.events.filter((e) => !e.tbc && Date.parse(e.date) > now && Date.parse(e.date) - now < 7 * 86400000).length + owing.length;
     const badge = $('#hqBadge');
     badge.textContent = owing.length ? '💰' : week;
     badge.classList.toggle('hidden', !week);
@@ -1305,7 +1327,7 @@
           el('p', { class: 'muted', style: 'margin:0 0 6px' }, t('me.codeHint')),
           code,
           el('button', { class: 'btn small', style: 'margin-top:8px', onclick: () => { navigator.clipboard && navigator.clipboard.writeText(me.code).then(() => toast(t('me.copied'), 'good')); } }, t('me.copy'))),
-        el('button', { class: 'btn ghost small', onclick: () => { if (confirm(t('me.logoutConfirm'))) logout(); } }, t('me.logout')));
+        el('button', { class: 'btn ghost small', onclick: async () => { if (await askConfirm(t('me.logoutConfirm'))) logout(); } }, t('me.logout')));
     }
     return wrap;
   }
@@ -1390,7 +1412,7 @@
     if (state.token) {
       try { const r = await api('GET', '/api/me'); state.me = r.user; enterTown(); return; }
       catch (e) {
-        if (e.status === 401 || e.status === 403) { store.del('lp258_token'); state.token = null; if (e.status === 403) alert(e.message); }
+        if (e.status === 401 || e.status === 403) { store.del('lp258_token'); state.token = null; if (e.status === 403) toast(e.message, 'bad', 5000); }
         else toast(t('err.offline'), 'bad');
       }
     }

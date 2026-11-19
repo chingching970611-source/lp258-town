@@ -46,6 +46,22 @@
   };
   const toLocalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const jobLabel = (type) => { const j = (t('jobs') || {})[type]; return j ? `${Room.ICON[type]} ${j.name}` : t('ad.noRoom'); };
+  function dialog({ text, input = false, value = '', okText, danger = false }) {
+    return new Promise((resolve) => {
+      const inp = input ? el('input', { class: 'inp', value }) : null;
+      const ov = el('div', { class: 'modal dlg' });
+      const done = (v) => { ov.remove(); resolve(v); };
+      const ok = el('button', { class: 'btn ' + (danger ? 'red' : 'primary'), onclick: () => done(input ? inp.value : true) }, okText || t('dlg.ok'));
+      ov.append(el('div', { class: 'modal-card dlg-card' }, el('p', { class: 'dlg-text' }, text), inp,
+        el('div', { class: 'dlg-acts' }, el('button', { class: 'btn ghost', onclick: () => done(input ? null : false) }, t('dlg.cancel')), ok)));
+      ov.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') done(input ? null : false); if (e.key === 'Enter' && !e.isComposing) done(input ? inp.value : true); });
+      ov.addEventListener('pointerdown', (e) => { if (e.target === ov) done(input ? null : false); });
+      document.body.append(ov);
+      (inp || ok).focus();
+    });
+  }
+  const askConfirm = (text, danger = false) => dialog({ text, danger, okText: danger ? t('dlg.delete') : t('dlg.ok') });
+  const askText = (text, value = '') => dialog({ text, input: true, value });
   function openModal(node) { $('#modalCard').replaceChildren(node); $('#modal').classList.remove('hidden'); }
   function closeModal() { $('#modal').classList.add('hidden'); }
   $('#modal').addEventListener('pointerdown', (e) => { if (e.target.id === 'modal') closeModal(); });
@@ -84,6 +100,7 @@
   }
   const fileUrl = (id) => `/api/file/${encodeURIComponent(id)}?t=${encodeURIComponent(token)}`;
   const money = (n) => (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n)));
+  const cur = () => (data && data.settings && data.settings.currency) || 'RM';
   setInterval(() => {
     if (token && data && $('#modal').classList.contains('hidden') && ['overview', 'review', 'users'].includes(tab) && !document.hidden) load().catch(() => {});
   }, 10000);
@@ -93,13 +110,13 @@
     events: {
       icon: '📍',
       fields: [
-        { k: 'title', l: 'ad.f.title', t: 'text' }, { k: 'date', l: 'ad.f.date', t: 'datetime' }, { k: 'endDate', l: 'ad.f.endDate', t: 'datetime' },
+        { k: 'title', l: 'ad.f.title', t: 'text' }, { k: 'tbc', l: 'ad.f.tbc', t: 'tbc', def: false }, { k: 'date', l: 'ad.f.date', t: 'datetime' }, { k: 'endDate', l: 'ad.f.endDate', t: 'datetime' },
         { k: 'fee', l: 'ad.f.fee', t: 'number', def: 0, step: '0.01' }, { k: 'capacity', l: 'ad.f.capacity', t: 'number', def: 0 },
         { k: 'payDeadline', l: 'ad.f.payDeadline', t: 'datetime' }, { k: 'payInfo', l: 'ad.f.payInfo', t: 'textarea', rows: 2 }, { k: 'qrFile', l: 'ad.f.qr', t: 'qr' },
         { k: 'venue', l: 'ad.f.venue', t: 'text' }, { k: 'address', l: 'ad.f.address', t: 'text' }, { k: 'content', l: 'ad.f.content', t: 'textarea' },
         { k: 'record', l: 'ad.f.record', t: 'textarea' },
       ],
-      cols: [['title', 'ad.h.event'], ['date', 'ad.h.time', (v) => fmt(v)], ['fee', 'ad.h.fee', (v) => (Number(v) > 0 ? 'HK$ ' + money(v) : t('ad.free'))],
+      cols: [['title', 'ad.h.event'], ['date', 'ad.h.time', (v, it) => (it.tbc ? '✨ ' + t('ad.tbc') : fmt(v))], ['fee', 'ad.h.fee', (v) => (Number(v) > 0 ? cur() + ' ' + money(v) : t('ad.free'))],
         ['attendees', 'ad.h.attendees', (v, it) => attSummaryShort(it)], ['updatedAt', 'ad.h.updated', (v) => (v ? ago(v) : '—')]],
     },
     polls: {
@@ -126,7 +143,7 @@
   const colName = (col) => t('ad.col.' + col);
 
   // ---------------------------------------------------------- render
-  const TABS = ['overview', 'events', 'polls', 'quiz', 'riddles', 'challenges', 'review', 'users', 'announce', 'settings'];
+  const TABS = ['overview', 'events', 'polls', 'quiz', 'riddles', 'challenges', 'review', 'users', 'announce', 'chat', 'trash', 'settings'];
   function attSummaryShort(ev) {
     const a = ev.attendees || [];
     if (!(Number(ev.fee) > 0)) return t('ad.att.free', { n: a.length }) + (ev.capacity ? ` / ${ev.capacity}` : '');
@@ -146,6 +163,8 @@
     else if (tab === 'users') main.append(renderUsers());
     else if (tab === 'announce') main.append(renderAnnounce());
     else if (tab === 'settings') main.append(renderSettings());
+    else if (tab === 'chat') main.append(renderChat());
+    else if (tab === 'trash') main.append(renderTrash());
   }
   const go = (id) => { tab = id; render(); };
 
@@ -226,6 +245,7 @@
       else if (f.t === 'datetime') input = el('input', { class: 'inp', type: 'datetime-local', value: toLocalInput(v) });
       else if (f.t === 'number') input = el('input', { class: 'inp', type: 'number', min: 0, step: f.step || '1', value: v ?? 0 });
       else if (f.t === 'bool') input = el('select', { class: 'inp' }, el('option', { value: 'true', selected: v !== false }, t('ad.open')), el('option', { value: 'false', selected: v === false }, t('ad.closed')));
+      else if (f.t === 'tbc') input = el('select', { class: 'inp' }, el('option', { value: 'false', selected: !v }, t('ad.tbcNo')), el('option', { value: 'true', selected: !!v }, t('ad.tbcYes')));
       else if (f.t === 'options') {
         const opts = (it && it.options) || ['', '', '', ''];
         const ans = it ? it.answer : 0;
@@ -235,7 +255,7 @@
           el('input', { class: 'inp', value: opts[i] || '', placeholder: i < 2 ? t('ad.f.optReq') : t('ad.f.optOpt') }))));
       } else input = el('input', { class: 'inp', value: v || '' });
       inputs[f.k] = { f, input };
-      form.append(el('label', {}, t(f.l)), input);
+      form.append(el('label', {}, t(f.l, { cur: cur() })), input);
     }
     const err = el('p', { class: 'err' });
     form.append(err, el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' },
@@ -246,7 +266,7 @@
         for (const [k, { f, input }] of Object.entries(inputs)) {
           if (f.t === 'datetime') item[k] = input.value ? new Date(input.value).toISOString() : '';
           else if (f.t === 'number') item[k] = Number(input.value);
-          else if (f.t === 'bool') item[k] = input.value === 'true';
+          else if (f.t === 'bool' || f.t === 'tbc') item[k] = input.value === 'true';
           else if (f.t === 'qr') { if (input.state.image) item.qrImage = input.state.image; if (input.state.remove) item.removeQr = true; }
           else if (f.t === 'pollopts') item.options = [...input.querySelectorAll('.inp')].map((x) => x.value.trim()).filter(Boolean);
           else if (f.t === 'options') {
@@ -264,11 +284,11 @@
     openModal(form);
   }
   async function delItem(col, it) {
-    if (!confirm(t('ad.confirmDelete', { name: it.title || it.question }))) return;
+    if (!await askConfirm(t('ad.confirmDelete', { name: it.title || it.question }), true)) return;
     try { await api('POST', '/api/admin/delete', { col, id: it.id }); closeModal(); toast(t('ad.deleted')); load(); } catch (e) { toast(e.message, 'bad'); }
   }
   async function startLive(q) {
-    const secs = prompt(t('ad.livePrompt', { q: q.question }), '20');
+    const secs = await askText(t('ad.livePrompt', { q: q.question }), '20');
     if (secs === null) return;
     try { await api('POST', '/api/admin/live/start', { quizId: q.id, seconds: Number(secs) }); toast(t('ad.liveSent'), 'good'); setTimeout(load, 500); }
     catch (e) { toast(e.message, 'bad'); }
@@ -292,8 +312,8 @@
   }
   async function setAttendance(ev, a, status) {
     let note;
-    if (status === 'unpaid') { note = prompt(t('ad.att.rejectPrompt'), ''); if (note === null) return; }
-    if (status === 'remove' && !confirm(t('ad.att.removeConfirm', { name: a.nickname }))) return;
+    if (status === 'unpaid') { note = await askText(t('ad.att.rejectPrompt'), ''); if (note === null) return; }
+    if (status === 'remove' && !await askConfirm(t('ad.att.removeConfirm', { name: a.nickname }), true)) return;
     try { await api('POST', '/api/admin/attendance', { eventId: ev.id, userId: a.userId, status, note }); toast(t('ad.updated'), 'good'); await load(); showAttendees(ev.id); }
     catch (e) { toast(e.message, 'bad'); }
   }
@@ -316,7 +336,7 @@
         el('button', { class: 'btn small ghost', onclick: () => setAttendance(ev, a, 'remove') }, t('ad.att.remove')))));
     openModal(el('div', { class: 'att-modal' },
       el('h2', { style: 'margin-top:0' }, t('ad.att.title', { title: ev.title })),
-      el('p', { class: 'muted' }, attSummaryShort(ev) + (paidEv ? ' · HK$ ' + money(ev.fee) : '')),
+      el('p', { class: 'muted' }, attSummaryShort(ev) + (paidEv ? ' · ' + cur() + ' ' + money(ev.fee) : '')),
       rows.length ? rows : el('p', {}, t('ad.nobodyYet')),
       el('div', { style: 'text-align:right;margin-top:12px' }, el('button', { class: 'btn', onclick: closeModal }, t('close')))));
   }
@@ -355,8 +375,8 @@
           el('td', {}, u.online ? t('ad.now') : ago(u.lastSeen)),
           el('td', { class: 'acts' },
             el('button', { class: 'btn small blue', onclick: () => editUser(u) }, t('ad.edit')),
-            el('button', { class: 'btn small ' + (u.banned ? 'green' : 'ghost'), onclick: () => {
-              if (!u.banned && !confirm(t('ad.banConfirm', { name: u.nickname }))) return;
+            el('button', { class: 'btn small ' + (u.banned ? 'green' : 'ghost'), onclick: async () => {
+              if (!u.banned && !await askConfirm(t('ad.banConfirm', { name: u.nickname }), true)) return;
               setUser(u, { banned: !u.banned });
             } }, u.banned ? t('ad.unban') : t('ad.ban')),
             el('button', { class: 'btn small ghost', onclick: () => deleteUser(u) }, t('ad.delete'))))))))
@@ -385,7 +405,7 @@
     try { await api('POST', '/api/admin/user', { id: u.id, ...patch }); toast(t('ad.updated'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
   }
   async function deleteUser(u) {
-    if (!confirm(t('ad.userDeleteConfirm', { name: u.nickname }))) return;
+    if (!await askConfirm(t('ad.userDeleteConfirm', { name: u.nickname }), true)) return;
     try { await api('POST', '/api/admin/user/delete', { id: u.id }); closeModal(); toast(t('ad.deleted')); load(); } catch (e) { toast(e.message, 'bad'); }
   }
 
@@ -402,7 +422,7 @@
         el('div', { style: 'flex:1;min-width:200px' }, a.text, el('div', { class: 'muted' }, fmt(a.createdAt))),
         el('button', { class: 'btn small blue', onclick: () => editAnnounce(a) }, t('ad.edit')),
         el('button', { class: 'btn small ghost', onclick: async () => {
-          if (!confirm(t('ad.confirmDelete', { name: a.text.slice(0, 30) }))) return;
+          if (!await askConfirm(t('ad.confirmDelete', { name: a.text.slice(0, 30) }), true)) return;
           try { await api('POST', '/api/admin/announce/delete', { id: a.id }); load(); } catch (e) { toast(e.message, 'bad'); }
         } }, t('ad.delete')))));
   }
@@ -416,6 +436,65 @@
         } }, t('ad.save')))));
   }
 
+  function renderChat() {
+    const list = data.chat || [];
+    return el('div', {},
+      el('div', { class: 'toolbar' }, el('h2', {}, t('ad.chatTitle'))),
+      el('p', { class: 'muted' }, t('ad.chatHint')),
+      list.length ? list.map((m) => el('div', { class: 'card', style: 'display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap' },
+        el('div', { style: 'flex:1;min-width:200px' }, el('b', {}, m.name), ' ', el('span', { class: 'muted' }, fmt(new Date(m.at).toISOString())), el('div', { style: 'white-space:pre-wrap;margin-top:2px' }, m.text)),
+        el('button', { class: 'btn small ghost', onclick: async () => {
+          if (!await askConfirm(t('ad.chatDeleteConfirm', { text: m.text.slice(0, 60) }), true)) return;
+          try { await api('POST', '/api/admin/chat/delete', { id: m.id }); toast(t('ad.deleted')); load(); } catch (e) { toast(e.message, 'bad'); }
+        } }, t('ad.delete')))) : el('div', { class: 'empty' }, t('ad.chatEmpty')));
+  }
+  let trashFilter = 'all';
+  const trashName = (r) => { const it = r.item || {}; return it.title || it.question || it.nickname || (it.text ? it.text.slice(0, 60) : '') || '—'; };
+  function renderTrash() {
+    const all = data.trash || [];
+    const cols = ['all', ...new Set(all.map((r) => r.col))];
+    const list = trashFilter === 'all' ? all : all.filter((r) => r.col === trashFilter);
+    return el('div', {},
+      el('div', { class: 'toolbar' }, el('h2', {}, t('ad.trashTitle', { n: all.length }))),
+      el('p', { class: 'muted' }, t('ad.trashHint')),
+      el('div', { class: 'cz-opts', style: 'margin-bottom:10px' }, cols.map((c) => el('button', { class: trashFilter === c ? 'on' : '', onclick: () => { trashFilter = c; render(); } }, c === 'all' ? t('ad.trash.all') : t('ad.trash.' + c)))),
+      list.length ? el('div', { class: 'tbl-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, el('th', {}, t('ad.h.status')), el('th', {}, t('ad.h.content')), el('th', {}, t('ad.h.time')), el('th', {}))),
+        el('tbody', {}, list.map((r) => el('tr', {},
+          el('td', {}, el('span', { class: 'tag' }, t('ad.trash.' + r.col))),
+          el('td', { class: 'pre' }, trashName(r)),
+          el('td', {}, t('ad.trash.deleted', { date: fmt(new Date(r.deletedAt).toISOString()) })),
+          el('td', { class: 'acts' }, el('button', { class: 'btn small', onclick: () => viewRecord(r) }, t('ad.trash.view')))))))) : el('div', { class: 'empty' }, t('ad.trashEmpty')));
+  }
+  function viewRecord(r) {
+    const it = r.item || {};
+    const rows = [];
+    const add = (label, value) => { if (value !== undefined && value !== null && value !== '') rows.push(el('div', { class: 'rec-row' }, el('b', {}, label), el('div', { class: 'pre' }, String(value)))); };
+    if (r.col === 'events') {
+      add(t('ad.h.event'), it.title); add(t('ad.h.time'), it.tbc ? t('ad.tbc') : fmt(it.date)); add(t('ad.f.venue'), it.venue); add(t('ad.f.address'), it.address);
+      add(t('ad.h.fee'), Number(it.fee) > 0 ? cur() + ' ' + money(it.fee) : t('ad.free')); add(t('ad.f.content'), it.content); add(t('ad.f.record'), it.record);
+    } else if (r.col === 'polls') {
+      add(t('ad.h.question'), it.question);
+      const counts = (it.options || []).map(() => 0); for (const v of Object.values(it.votes || {})) if (counts[v] !== undefined) counts[v]++;
+      add(t('ad.h.votes'), (it.options || []).map((o, i) => o + ': ' + counts[i]).join('\n'));
+    } else if (r.col === 'quiz') { add(t('ad.h.question'), it.question); add(t('ad.h.answer'), (it.options || [])[it.answer]); add(t('ad.h.points'), it.points); }
+    else if (r.col === 'riddles') { add(t('ad.h.riddle'), it.question); add(t('ad.h.riddleA'), it.answer); add(t('ad.f.hint'), it.hint); }
+    else if (r.col === 'challenges') { add(t('ad.h.challenge'), it.title); add(t('ad.f.chDesc'), it.description); add(t('ad.h.points'), it.points); }
+    else if (r.col === 'users') { add(t('ad.h.nick'), it.nickname); add(t('ad.h.status'), it.status); add(t('ad.h.points'), it.points); add(t('ad.h.job'), it.room ? jobLabel(it.room.type) : ''); add(t('ad.h.lastSeen'), it.lastSeen ? fmt(new Date(it.lastSeen).toISOString()) : ''); }
+    else if (r.col === 'announcements') add(t('ad.announceTitle'), it.text);
+    else if (r.col === 'chat') { add(t('ad.h.member'), it.name); add(t('ad.h.time'), it.at ? fmt(new Date(it.at).toISOString()) : ''); add(t('ad.h.content'), it.text); }
+    const att = (r.attendees || []).map((a) => el('div', { class: 'att-row ' + a.status },
+      el('div', { style: 'flex:1' }, el('b', {}, a.nickname), ' ', el('span', { class: 'tag' }, t('ad.att.' + a.status)),
+        a.paidAt ? el('div', { class: 'muted' }, '✅ ' + fmt(new Date(a.paidAt).toISOString())) : null),
+      a.proofFile ? el('a', { href: fileUrl(a.proofFile), target: '_blank', rel: 'noopener' }, el('img', { class: 'proof-thumb', src: fileUrl(a.proofFile), alt: '' })) : null));
+    openModal(el('div', { class: 'att-modal' },
+      el('h2', { style: 'margin-top:0' }, t('ad.trash.' + r.col) + ' · ' + trashName(r)),
+      el('div', { class: 'tag r', style: 'margin-bottom:10px' }, t('ad.trash.readonly')),
+      el('p', { class: 'muted' }, t('ad.trash.deleted', { date: fmt(new Date(r.deletedAt).toISOString()) })),
+      rows, att.length ? el('h3', {}, t('ad.h.attendees') + ' (' + att.length + ')') : null, att,
+      el('div', { style: 'text-align:right;margin-top:12px' }, el('button', { class: 'btn', onclick: closeModal }, t('close')))));
+  }
+
   function renderSettings() {
     const p1 = el('input', { class: 'inp', type: 'password', placeholder: t('ad.pwNew'), autocomplete: 'new-password' });
     const p2 = el('input', { class: 'inp', type: 'password', placeholder: t('ad.pwAgain'), autocomplete: 'new-password', style: 'margin-top:6px' });
@@ -423,6 +502,15 @@
       el('div', { class: 'toolbar' }, el('h2', {}, t('ad.settingsTitle'))),
       el('div', { class: 'card' }, el('h3', {}, t('me.lang')),
         el('div', { class: 'cz-opts' }, ['zh', 'en'].map((l) => el('button', { class: I18N.lang === l ? 'on' : '', onclick: () => { if (I18N.lang !== l) I18N.setLang(l); } }, t('lang.' + l))))),
+      (() => {
+        const ci = el('input', { class: 'inp', value: cur(), maxLength: 6, style: 'max-width:140px' });
+        return el('div', { class: 'card' }, el('h3', {}, t('ad.currencyTitle')), el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.currencyHint')),
+          el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, ci,
+            ['RM', 'HK$', 'SGD', 'USD'].map((c) => el('button', { class: 'btn small ghost', onclick: () => { ci.value = c; } }, c)),
+            el('button', { class: 'btn primary small', onclick: async () => {
+              try { const r = await api('POST', '/api/admin/settings', { currency: ci.value }); data.settings = r.settings; toast(t('ad.currencySaved'), 'good'); render(); } catch (e) { toast(e.message, 'bad'); }
+            } }, t('ad.save'))));
+      })(),
       el('div', { class: 'card' }, el('h3', {}, t('ad.seasonTitle')),
         el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.seasonHint')),
         el('div', { class: 'cz-opts' }, ['auto', 'spring', 'summer', 'autumn', 'winter'].map((sn) => el('button', {

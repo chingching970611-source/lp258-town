@@ -41,7 +41,7 @@ function localAt(days, h, m = 0) {
 function seedDb() {
   return {
     meta: { v: DB_VERSION },
-    settings: { season: 'auto' },
+    settings: { season: 'auto', currency: 'RM' },
     users: {},
     events: [
       { id: uid(4), title: '冬日聚会 Winter Meetup', venue: 'LP 258 HQ', address: '（请在后台更新地址）', date: localAt(3, 19, 30), endDate: localAt(3, 22, 30),
@@ -53,6 +53,7 @@ function seedDb() {
     ],
     attendance: {},
     polls: [],
+    trash: [],
     quiz: [
       { id: uid(4), question: '地球上最大的海洋是？', options: ['大西洋', '太平洋', '印度洋', '北冰洋'], answer: 1, points: 10 },
       { id: uid(4), question: '一年有多少个星期？', options: ['48', '50', '52', '54'], answer: 2, points: 10 },
@@ -146,6 +147,12 @@ function migrateV1(d) {
   d.meta.v = 2;
 }
 
+// Deleted things are kept as read-only records (the host can look back, but not edit them).
+function archive(d, col, item, extra) {
+  d.trash = d.trash || [];
+  d.trash.push({ id: Math.random().toString(16).slice(2, 10), col, item, deletedAt: Date.now(), ...extra });
+  if (d.trash.length > 500) d.trash.splice(0, d.trash.length - 500);
+}
 function loadDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const base = seedDb();
@@ -154,6 +161,7 @@ function loadDb() {
     const d = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!d.meta) d.meta = { v: 1 };
     for (const k of Object.keys(base)) if (d[k] === undefined) d[k] = base[k];
+    if (!d.settings.currency) d.settings.currency = 'RM';
     migrate(d);
     return d;
   } catch (e) {
@@ -385,6 +393,7 @@ function endLive() {
 setInterval(() => {
   const t = now();
   for (const e of db.events) {
+    if (e.tbc) continue;
     const start = Date.parse(e.date);
     if (!start || e.remindedAt || start < t || start - t > 3600000) continue;
     e.remindedAt = t;
@@ -396,7 +405,7 @@ setInterval(() => {
 // Attendance: free events → 'going'; paid events → 'unpaid' → 'submitted' (screenshot uploaded) → 'paid' (host confirmed).
 const att = (eid) => db.attendance[eid] || (db.attendance[eid] = {});
 const isPaidEvent = (e) => Number(e.fee) > 0;
-const payDeadline = (e) => Date.parse(e.payDeadline || '') || Date.parse(e.date);
+const payDeadline = (e) => Date.parse(e.payDeadline || '') || (e.tbc ? 0 : Date.parse(e.date));
 const REMINDER_ROUNDS = [7, 3, 1]; // payment reminders: days before the payment deadline
 function paymentReminders() {
   const t = now();
@@ -418,7 +427,7 @@ setInterval(paymentReminders, Number(process.env.REMINDER_INTERVAL_MS) || 5 * 60
 
 // ---------------------------------------------------------------- content schemas (admin CRUD)
 const SCHEMAS = {
-  events: { title: ['line', 80, true], venue: ['line', 100], address: ['line', 200], date: ['date', true], endDate: ['date'], content: ['str', 3000], record: ['str', 5000],
+  events: { title: ['line', 80, true], tbc: ['bool'], venue: ['line', 100], address: ['line', 200], date: ['date'], endDate: ['date'], content: ['str', 3000], record: ['str', 5000],
     fee: ['money'], payInfo: ['str', 600], payDeadline: ['date'], capacity: ['int', 0, 100000] },
   polls: { question: ['str', 300, true], options: ['options', 6], closesAt: ['date'] },
   quiz: { question: ['str', 300, true], options: ['options'], answer: ['int', 0, 3], points: ['int', 0, 1000] },
@@ -452,6 +461,7 @@ function cleanItem(col, input) {
     }
   }
   if (col === 'quiz' && out.answer >= out.options.length) throw httpErr(400, 'answer_not_in_options');
+  if (col === 'events' && !out.tbc && !out.date) throw httpErr(400, 'invalid_date');
   return out;
 }
 
@@ -604,10 +614,10 @@ route('GET /api/content', async (req, res) => {
       myVote: p.votes && p.votes[u.id] !== undefined ? p.votes[u.id] : null, closed: !!(p.closesAt && Date.parse(p.closesAt) < now()), createdAt: p.createdAt, updatedAt: p.updatedAt };
   };
   json(res, 200, {
-    events: [...db.events].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-      .map(({ id, title, venue, address, date, endDate, content, record, fee, payInfo, payDeadline: pd, capacity, qrFile, updatedAt, createdAt }) => {
+    events: [...db.events].sort((a, b) => (a.tbc ? 9e15 : Date.parse(a.date) || 0) - (b.tbc ? 9e15 : Date.parse(b.date) || 0))
+      .map(({ id, title, tbc, venue, address, date, endDate, content, record, fee, payInfo, payDeadline: pd, capacity, qrFile, updatedAt, createdAt }) => {
         const mine = att(id)[u.id];
-        return { id, title, venue, address, date, endDate, content, record, fee: fee || 0, payInfo: payInfo || '', payDeadline: pd || '', capacity: capacity || 0,
+        return { id, title, tbc: !!tbc, venue, address, date: date || '', endDate, content, record, fee: fee || 0, payInfo: payInfo || '', payDeadline: pd || '', capacity: capacity || 0,
           qrFile: qrFile || null, updatedAt: updatedAt || createdAt || null, count: Object.keys(att(id)).length,
           mine: mine ? { status: mine.status, proofFile: mine.proofFile || null, submittedAt: mine.submittedAt || null, paidAt: mine.paidAt || null, note: mine.note || '' } : null };
       }),
@@ -622,6 +632,7 @@ route('GET /api/content', async (req, res) => {
     leaderboard: leaderboard(),
     minigame: minigameBoard(),
     myBest: db.minigame[u.id] || 0,
+    settings: db.settings,
     lastLive: lastLiveResult,
   });
 });
@@ -759,13 +770,18 @@ route('GET /api/admin/overview', async (req, res) => {
   json(res, 200, {
     users,
     onlineCount: online.size,
-    events: [...db.events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).map((e) => ({ ...e,
+    events: [...db.events].sort((a, b) => (b.tbc ? 9e15 : Date.parse(b.date) || 0) - (a.tbc ? 9e15 : Date.parse(a.date) || 0)).map((e) => ({ ...e,
       attendees: Object.entries(att(e.id)).map(([id, r]) => ({ userId: id, nickname: name(id), ...r })).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0)) })),
     polls: [...db.polls].reverse().map((p) => { const counts = p.options.map(() => 0); for (const v of Object.values(p.votes || {})) if (counts[v] !== undefined) counts[v]++; return { id: p.id, question: p.question, options: p.options, closesAt: p.closesAt || '', counts, createdAt: p.createdAt, updatedAt: p.updatedAt }; }),
     pendingPayments: db.events.reduce((n, e) => n + Object.values(att(e.id)).filter((r) => r.status === 'submitted').length, 0),
     quiz: db.quiz, riddles: db.riddles, challenges: db.challenges,
     submissions: [...db.submissions].reverse().map((s) => ({ ...s, nickname: name(s.userId), challenge: (db.challenges.find((c) => c.id === s.challengeId) || {}).title || '—' })),
     announcements: [...db.announcements].reverse(),
+    chat: db.chat.filter((m) => !m.to && !m.system).slice(-150).reverse(),
+    trash: [...(db.trash || [])].reverse().map((t) => {
+      if (t.col !== 'events' || !t.attendance) return t;
+      return { ...t, attendees: Object.entries(t.attendance).map(([id, r]) => ({ userId: id, nickname: (db.users[id] && db.users[id].nickname) || (t.names && t.names[id]) || '—', ...r })) };
+    }),
     live: live ? { question: live.question, endsAt: live.endsAt, count: live.answers.size } : null,
     lastLive: lastLiveResult,
     passwordFromEnv: !!process.env.ADMIN_PASSWORD,
@@ -810,10 +826,11 @@ route('POST /api/admin/delete', async (req, res, body) => {
   if (i < 0) throw httpErr(404, 'not_found');
   const [removed] = db[col].splice(i, 1);
   if (col === 'events') {
-    for (const r of Object.values(att(body.id))) dropFile(r.proofFile);
+    const attendance = att(body.id);
+    const names = Object.fromEntries(Object.keys(attendance).map((id) => [id, db.users[id] ? db.users[id].nickname : '—']));
+    archive(db, col, removed, { attendance, names });
     delete db.attendance[body.id];
-    dropFile(removed.qrFile);
-  }
+  } else archive(db, col, removed);
   save();
   broadcast('content', { col });
   json(res, 200, { ok: true });
@@ -884,10 +901,11 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
   if (!u) throw httpErr(404, 'not_found');
   kick(u.id, 'deleted');
   tokens.delete(u.token);
+  archive(db, 'users', { id: u.id, nickname: u.nickname, status: u.status || '', points: u.points, avatar: u.avatar, room: u.room || null, createdAt: u.createdAt, lastSeen: u.lastSeen });
   delete db.users[u.id];
   delete db.solved[u.id];
   delete db.minigame[u.id];
-  for (const a of Object.values(db.attendance)) if (a[u.id]) { dropFile(a[u.id].proofFile); delete a[u.id]; }
+  for (const a of Object.values(db.attendance)) if (a[u.id]) delete a[u.id];
   for (const p of db.polls) if (p.votes) delete p.votes[u.id];
   db.submissions = db.submissions.filter((s) => s.userId !== u.id);
   save();
@@ -916,9 +934,22 @@ route('POST /api/admin/announce', async (req, res, body) => {
 
 route('POST /api/admin/announce/delete', async (req, res, body) => {
   needAdmin(req);
+  const gone = db.announcements.find((a) => a.id === body.id);
+  if (gone) archive(db, 'announcements', gone);
   db.announcements = db.announcements.filter((a) => a.id !== body.id);
   save();
   broadcast('announceRemoved', { id: body.id });
+  json(res, 200, { ok: true });
+});
+
+route('POST /api/admin/chat/delete', async (req, res, body) => {
+  needAdmin(req);
+  const m = db.chat.find((x) => x.id === body.id);
+  if (!m) throw httpErr(404, 'not_found');
+  archive(db, 'chat', m);
+  db.chat = db.chat.filter((x) => x.id !== body.id);
+  save();
+  broadcast('chatRemoved', { id: body.id });
   json(res, 200, { ok: true });
 });
 
@@ -951,6 +982,12 @@ route('POST /api/admin/settings', async (req, res, body) => {
   if (body.season !== undefined) {
     if (!SEASONS.includes(body.season)) throw httpErr(400, 'bad_request');
     db.settings.season = body.season;
+  }
+  if (body.currency !== undefined) {
+    const c = line(body.currency, 6);
+    if (!c) throw httpErr(400, 'field_required', { field: 'currency' });
+    db.settings.currency = c;
+    broadcast('content', { col: 'events' });
   }
   save();
   broadcast('settings', db.settings);
@@ -1065,6 +1102,8 @@ const server = http.createServer(async (req, res) => {
         for (const k of Object.keys(db)) delete db[k];
         Object.assign(db, base, remote);
         if (!remote.meta) db.meta = { v: 1 };
+        db.settings = { ...base.settings, ...(remote.settings || {}) };
+        if (!db.trash) db.trash = [];
         migrate(db);
         rebuildTokens();
         console.log(`☁️  Loaded data from GitHub Gist (${Object.keys(db.users).length} members)`);

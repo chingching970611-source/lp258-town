@@ -274,3 +274,13 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .qr-field { display: flex; flex-direction: column; gap: 6px; }
 .qr-preview { width: 140px; height: 140px; object-fit: contain; background: #fff; border-radius: 12px; border: 2px solid var(--line); }
 .att-modal { max-height: 80vh; overflow: auto; }
+
+/* ---------- in-page dialogs, records, TBC ---------- */
+.modal.dlg { z-index: 80; }
+.dlg-card { width: min(380px, 100%); }
+.dlg-text { white-space: pre-wrap; font-weight: 600; margin: 0 0 10px; }
+.dlg-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.btn.red { background: var(--red); color: #fff; box-shadow: 0 3px 0 #C23B3B; }
+.rec-row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.date-badge.tbc .d { font-size: 15px; padding: 8px 0 6px; }
+.event.tbc { background: linear-gradient(135deg, #FFF8E6, #FFF0F6); }
