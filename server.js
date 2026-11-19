@@ -103,8 +103,8 @@ function saveNow() {
 // ---------------------------------------------------------------- optional cloud backup (free hosting)
 // On free hosts the disk is wiped on restart. If GIST_ID + GITHUB_TOKEN are set, the database is
 // loaded from (and saved to) a secret GitHub Gist so nothing is lost.
-const GIST_ID = process.env.GIST_ID || '';
-const GH_TOKEN = process.env.GITHUB_TOKEN || '';
+const GIST_ID = (process.env.GIST_ID || '').trim();
+const GH_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const GIST_FILE = 'lp258-db.json';
 const useGist = !!(GIST_ID && GH_TOKEN);
 let gistTimer = null, gistBusy = false, gistDirty = false;
@@ -790,7 +790,7 @@ const server = http.createServer(async (req, res) => {
       // Refuse to start rather than overwrite the backup with empty data.
       console.error('❌ Could not load data from GitHub Gist:', e.message);
       console.error('   Check GIST_ID and GITHUB_TOKEN (needs the "gist" scope).');
-      process.exitCode = 1;
+      setTimeout(() => process.exit(1), 200);
       return;
     }
   } else if (process.env.RENDER) {
