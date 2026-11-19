@@ -609,6 +609,18 @@
               try { const r = await api('POST', '/api/admin/settings', { currency: ci.value }); data.settings = r.settings; toast(t('ad.currencySaved'), 'good'); render(); } catch (e) { toast(e.message, 'bad'); }
             } }, t('ad.save'))));
       })(),
+      (() => {
+        const s = (data && data.settings) || {};
+        const nameIn = el('input', { class: 'inp', value: s.themeTitle || '', maxLength: 60, placeholder: t('ad.themeName') });
+        const urlIn = el('input', { class: 'inp', value: s.themeUrl || '', maxLength: 300, placeholder: 'https://www.youtube.com/watch?v=…', style: 'margin-top:6px' });
+        return el('div', { class: 'card' }, el('h3', {}, t('ad.themeTitle')), el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.themeHint')),
+          nameIn, urlIn,
+          el('div', { style: 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap' },
+            el('button', { class: 'btn primary small', onclick: async () => {
+              try { const r = await api('POST', '/api/admin/settings', { themeTitle: nameIn.value, themeUrl: urlIn.value }); data.settings = r.settings; toast(t('ad.saved'), 'good'); } catch (e) { toast(e.message, 'bad'); }
+            } }, t('ad.save')),
+            s.themeUrl ? el('a', { class: 'btn small ghost', href: s.themeUrl, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + t('ad.themeTry')) : null));
+      })(),
       el('div', { class: 'card' }, el('h3', {}, t('ad.seasonTitle')),
         el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.seasonHint')),
         el('div', { class: 'cz-opts' }, ['auto', 'spring', 'summer', 'autumn', 'winter'].map((sn) => el('button', {

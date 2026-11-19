@@ -95,7 +95,16 @@
     const sp = $('#seasonPill'); if (sp) sp.textContent = Season.ICON[season()] + ' ' + t('season.' + season());
     const mb = $('#musicBtn'); if (mb) { mb.textContent = musicOn ? '🎵' : '🔇'; mb.title = musicOn ? t('music.off') : t('music.on'); }
   }
-  function syncMusic() { if (musicOn && !$('#town').classList.contains('hidden')) Season.Music.play(season()); else Season.Music.stop(); }
+  // background music follows where you are: live PK > game zone > chat café > the town's seasonal tune
+  function musicTrack() {
+    if (liveRoom) return 'battle';
+    if (currentPanel === 'games') return 'arcade';
+    if (currentPanel === 'chat') return 'cafe';
+    if (!currentPanel && currentZone) { if (currentZone.id === 'game') return 'arcade'; if (currentZone.id === 'cafe') return 'cafe'; }
+    return season();
+  }
+  const trackName = (k) => (['arcade', 'battle', 'cafe'].includes(k) ? t('music.track.' + k) : t('season.' + k));
+  function syncMusic() { if (musicOn && !$('#town').classList.contains('hidden')) Season.Music.play(musicTrack()); else Season.Music.stop(); }
   const firstGesture = () => { window.removeEventListener('pointerdown', firstGesture, true); window.removeEventListener('keydown', firstGesture, true); syncMusic(); };
   window.addEventListener('pointerdown', firstGesture, true);
   window.addEventListener('keydown', firstGesture, true);
@@ -412,6 +421,7 @@
       const L = liveRoom;
       liveRoom = null;
       stopGame();
+      syncMusic();
       if (L && currentPanel === 'games') { tabs.games = 'pk'; renderPanel(); }
       loadContent();
       pkResultModal(p);
@@ -447,7 +457,7 @@
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
     on('live', (d) => openLive(d));
     on('chatRemoved', (d) => { state.chat = state.chat.filter((m) => m.id !== d.id); if (currentPanel === 'chat') renderPanel(); });
-    on('settings', (d) => { const before = season(); state.settings = d; updateSeasonUi(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) Season.Music.play(season()); } });
+    on('settings', (d) => { const before = season(); state.settings = d; updateSeasonUi(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) syncMusic(); } });
     on('liveCount', (d) => { if (state.live) { state.live.count = d.count; const c = $('#liveCount'); if (c) c.textContent = t('live.count', { n: d.count }); } });
     on('liveResult', showLiveResult);
     on('kicked', (d) => { es.close(); logout(t('kicked.' + (d.key || 'banned'))); });
@@ -869,6 +879,7 @@
       const z = zoneAt(me.x, me.y);
       if (z !== currentZone) {
         currentZone = z;
+        if (!currentPanel) syncMusic();
         const b = $('#zoneBtn');
         if (z) { b.textContent = t('zone.enter', { name: t(z.key) }); b.classList.remove('hidden'); b.onclick = () => openPanel(z.panel); }
         else b.classList.add('hidden');
@@ -942,6 +953,7 @@
     $('#panelTitle').textContent = t('title.' + name);
     document.querySelectorAll('.nav button').forEach((b) => b.classList.toggle('on', b.dataset.panel === name));
     renderPanel();
+    syncMusic();
   }
   function closePanel() {
     liveQuit();
@@ -949,6 +961,7 @@
     currentPanel = null;
     $('#panel').classList.add('hidden');
     document.querySelectorAll('.nav button').forEach((b) => b.classList.remove('on'));
+    syncMusic();
   }
   $('#panelClose').onclick = closePanel;
   document.querySelectorAll('.nav button').forEach((b) => { b.onclick = () => openPanel(b.dataset.panel); });
@@ -1469,6 +1482,7 @@
     const meFrom = room.from === state.meId;
     if (currentPanel !== 'games') openPanel('games');
     stopGame();
+    setTimeout(syncMusic, 0);
     const L = liveRoom = { room, oppName: meFrom ? room.toName : room.fromName, my: 0, opp: 0, oppFinal: false, myFinal: false, sending: false, pending: null };
     L.meSide = liveSide(state.me.avatar, t('pk.you'), 'me');
     L.oppSide = liveSide(meFrom ? room.toAvatar : room.fromAvatar, L.oppName, 'opp');
@@ -1517,6 +1531,7 @@
     if (!liveRoom) return;
     const id = liveRoom.room.id;
     liveRoom = null;
+    syncMusic();
     api('POST', '/api/pk/live/cancel', { id }).catch(() => {});
   }
 
@@ -1538,6 +1553,14 @@
     if (p.game === 'quiz') runQuizDuel(box, p.quiz || [], (answers) => submit({ answers }));
     else runGame(box, p.game, p.seed, (score) => submit({ score }));
   }
+  function themeSong(cls = '') {
+    const s = state.settings || {};
+    if (!s.themeUrl) return null;
+    return el('a', { class: 'theme-song ' + cls, href: s.themeUrl, target: '_blank', rel: 'noopener noreferrer' },
+      el('span', { class: 'ts-icon' }, '🎵'),
+      el('span', { class: 'ts-text' }, el('small', {}, t('theme.label')), el('b', {}, s.themeTitle || '')),
+      el('span', { class: 'ts-play' }, '▶'));
+  }
   function pkResultModal(p) {
     const mineFrom = p.from === state.meId;
     const my = mineFrom ? p.fromScore : p.toScore, their = mineFrom ? p.toScore : p.fromScore;
@@ -1551,6 +1574,7 @@
         el('div', { class: 'pk-vs' }, 'VS'),
         el('div', {}, el('img', { src: Avatar.thumb((mineFrom ? p.toAvatar : p.fromAvatar) || {}, 56), alt: '' }), el('b', {}, their), el('div', { class: 'muted' }, mineFrom ? p.toName : p.fromName))),
       el('p', { class: 'muted' }, res === 'win' ? t('pk.winPts') : res === 'tie' ? t('pk.tiePts') : t('pk.losePts')),
+      themeSong('in-modal'),
       el('button', { class: 'btn primary', onclick: closeModal }, t('ok'))));
   }
   function renderPK(c) {
@@ -1608,7 +1632,7 @@
   // ---------- rank
   let rankGame = 'stars';
   function renderRank(c) {
-    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['games', t('rank.games')], ['pk', t('rank.pk')]]));
+    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['games', t('rank.games')], ['pk', t('rank.pk')]]), themeSong());
     let list, value;
     if (tabs.rank === 'points') { list = c.leaderboard; value = (u) => `⭐ ${u.points}`; }
     else if (tabs.rank === 'pk') { list = c.pkBoard || []; value = (u) => t('rank.pkWins', { n: u.wins }); }
@@ -1941,7 +1965,7 @@
     joy.addEventListener('pointermove', (e) => { if (e.pointerId === id) setFrom(e); });
     joy.addEventListener('pointerup', end); joy.addEventListener('pointercancel', end);
   })();
-  $('#musicBtn').onclick = () => { musicOn = !musicOn; store.set('lp258_music', musicOn ? '1' : '0'); updateSeasonUi(); syncMusic(); toast(musicOn ? t('music.playing', { name: t('season.' + season()) }) : t('music.muted'), 'info', 2000); };
+  $('#musicBtn').onclick = () => { musicOn = !musicOn; store.set('lp258_music', musicOn ? '1' : '0'); updateSeasonUi(); syncMusic(); toast(musicOn ? t('music.playing', { name: trackName(musicTrack()) }) : t('music.muted'), 'info', 2000); };
   $('#seasonPill').onclick = () => toast(Season.ICON[season()] + ' ' + t('season.info', { name: t('season.' + season()) }), 'info', 4000);
 
   let installPrompt = null;

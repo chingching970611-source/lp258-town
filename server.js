@@ -80,7 +80,7 @@ function localAt(days, h, m = 0) {
 function seedDb() {
   return {
     meta: { v: DB_VERSION },
-    settings: { season: 'auto', currency: 'RM' },
+    settings: { season: 'auto', currency: 'RM', themeTitle: 'Eminem - Not Afraid', themeUrl: 'https://www.youtube.com/watch?v=j5-yKhDd64s' },
     users: {},
     events: [
       { id: uid(4), title: '冬日聚会 Winter Meetup', venue: 'LP 258 HQ', address: '（请在后台更新地址）', date: localAt(3, 19, 30), endDate: localAt(3, 22, 30),
@@ -211,7 +211,7 @@ function loadDb() {
     const d = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!d.meta) d.meta = { v: 1 };
     for (const k of Object.keys(base)) if (d[k] === undefined) d[k] = base[k];
-    if (!d.settings.currency) d.settings.currency = 'RM';
+    d.settings = { ...base.settings, ...d.settings };
     if (!d.pinRequests) d.pinRequests = [];
     migrate(d);
     return d;
@@ -1608,6 +1608,12 @@ route('POST /api/admin/settings', async (req, res, body) => {
   if (body.season !== undefined) {
     if (!SEASONS.includes(body.season)) throw httpErr(400, 'bad_request');
     db.settings.season = body.season;
+  }
+  if (body.themeUrl !== undefined) {
+    const u = str(body.themeUrl, 300);
+    if (u) { let ok = false; try { ok = new URL(u).protocol === 'https:'; } catch {} if (!ok) throw httpErr(400, 'bad_theme_url'); }
+    db.settings.themeUrl = u;
+    db.settings.themeTitle = line(body.themeTitle, 60);
   }
   if (body.currency !== undefined) {
     const c = line(body.currency, 6);

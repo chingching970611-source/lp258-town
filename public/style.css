@@ -445,3 +445,12 @@ select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; bo
   .panel.game-full .pk-live .gs-whack { max-width: min(340px, calc(100vh - 300px)); max-width: min(340px, calc(100dvh - 300px)); }
   .panel.game-full .pk-live .gs-caterpillar { max-width: min(340px, calc(100vh - 390px)); max-width: min(340px, calc(100dvh - 390px)); }
 }
+
+/* ---------- theme song button ---------- */
+.theme-song { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; background: linear-gradient(135deg, #2A2260, #5B3FA8); border-radius: 16px; padding: 9px 12px; margin: 0 0 10px; box-shadow: 0 3px 0 #1C1640; }
+.theme-song .ts-icon { font-size: 24px; animation: bell 2s ease-in-out infinite; }
+.theme-song .ts-text { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
+.theme-song small { font-size: 11px; opacity: .8; }
+.theme-song b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-song .ts-play { width: 32px; height: 32px; border-radius: 50%; background: #FF4E4E; display: grid; place-items: center; font-size: 13px; flex: none; }
+.theme-song.in-modal { margin: 6px 0 12px; }
