@@ -458,7 +458,7 @@
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
     on('live', (d) => openLive(d));
     on('chatRemoved', (d) => { state.chat = state.chat.filter((m) => m.id !== d.id); if (currentPanel === 'chat') renderPanel(); });
-    on('settings', (d) => { const before = season(); const songBefore = state.settings && state.settings.themeUrl; state.settings = d; updateSeasonUi(); if (d.themeUrl !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) syncMusic(); } });
+    on('settings', (d) => { const before = season(); const songBefore = themeKeyOf(state.settings); state.settings = d; updateSeasonUi(); if (themeKeyOf(d) !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) syncMusic(); } });
     on('liveCount', (d) => { if (state.live) { state.live.count = d.count; const c = $('#liveCount'); if (c) c.textContent = t('live.count', { n: d.count }); } });
     on('liveResult', showLiveResult);
     on('kicked', (d) => { es.close(); logout(t('kicked.' + (d.key || 'banned'))); });
@@ -483,7 +483,7 @@
       const pkIn = (state.content.pk && state.content.pk.incoming.length) || 0;
       const gb = document.querySelector('.nav button[data-panel=games]');
       if (gb) { let b = gb.querySelector('.badge'); if (!b) { b = el('b', { class: 'badge' }); gb.append(b); } b.textContent = pkIn; b.classList.toggle('hidden', !pkIn); }
-      if (state.content.settings) { const songBefore = state.settings && state.settings.themeUrl; state.settings = state.content.settings; updateSeasonUi(); if (state.settings.themeUrl !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); }
+      if (state.content.settings) { const songBefore = themeKeyOf(state.settings); state.settings = state.content.settings; updateSeasonUi(); if (themeKeyOf(state.settings) !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); }
       checkReminders();
       if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && (gameRunning || liveRoom))) renderPanel();
     } catch (e) { if (e.status === 401) logout(t('err.relogin')); }
@@ -1682,39 +1682,60 @@
     document.body.classList.toggle('tb-open', themeExpanded);
     document.body.classList.toggle('tb-mini', !themeExpanded);
   }
-  function themePlay() { themeLoop = true; spLastPos = 0; spSend('play_from_start'); }
-  function themeStop() { themeLoop = false; spSend('pause'); themeExpanded = false; setThemePlaying(false); renderThemeState(); }
+  // the host's own uploaded song (full length, members only): a plain audio player that repeats forever
+  let themeAudioEl = null;
+  function themePlay() {
+    if (themeAudioEl) { themeAudioEl.currentTime = 0; const p = themeAudioEl.play(); if (p && p.catch) p.catch(() => toast(t('theme.tapAgain'), 'info')); return; }
+    themeLoop = true; spLastPos = 0; spSend('play_from_start');
+  }
+  function themeStop() {
+    if (themeAudioEl) themeAudioEl.pause();
+    else { themeLoop = false; spSend('pause'); }
+    themeExpanded = false; setThemePlaying(false); renderThemeState();
+  }
+  const themeKeyOf = (s) => (s && s.themeAudio ? 'mp3:' + s.themeAudio.at : (s && s.themeUrl) || '');
   function mountThemeBar() {
     const s = state.settings || {};
-    const uri = spotifyUri(s.themeUrl || ''), yid = youtubeId(s.themeUrl || '');
+    const mp3 = !!(s.themeAudio && state.token);
+    const uri = mp3 ? null : spotifyUri(s.themeUrl || ''), yid = mp3 ? null : youtubeId(s.themeUrl || '');
     let bar = document.getElementById('themeBar');
-    if (!s.themeUrl || (!uri && !yid)) { if (bar) bar.remove(); spotifyFrame = null; document.body.classList.remove('tb-open', 'tb-mini'); return; }
-    const key = uri || 'yt:' + yid;
+    if (!mp3 && (!s.themeUrl || (!uri && !yid))) { if (bar) bar.remove(); if (themeAudioEl) themeAudioEl.pause(); themeAudioEl = null; spotifyFrame = null; document.body.classList.remove('tb-open', 'tb-mini'); return; }
+    const key = mp3 ? 'mp3:' + s.themeAudio.at : uri || 'yt:' + yid;
+    const canStop = mp3 || !!uri;
     if (!bar || bar.dataset.key !== key) {
       if (bar) bar.remove();
-      spotifyFrame = null; spotifyPlaying = false; themeLoop = false; themeExpanded = false;
-      const host = el('div', { class: 'tb-host' + (uri ? '' : ' yt') });
+      if (themeAudioEl) themeAudioEl.pause();
+      themeAudioEl = null; spotifyFrame = null; spotifyPlaying = false; themeLoop = false; themeExpanded = false;
+      setThemePlaying(false);
+      const host = el('div', { class: 'tb-host' + (mp3 ? ' mp3' : uri ? '' : ' yt') });
       bar = el('div', { class: 'theme-bar', id: 'themeBar', 'data-key': key },
         el('button', { class: 'tb-pill', type: 'button', onclick: () => {
           const wasPlaying = spotifyPlaying;
           themeExpanded = true; renderThemeState();
-          if (uri && !wasPlaying) themePlay();
+          if (canStop && !wasPlaying) themePlay();
         } }, el('span', {}, '🎵 '), el('b', {}, t('theme.name')), el('span', { class: 'tb-act' }, '▶')),
         el('div', { class: 'tb-card' },
           el('div', { class: 'tb-head' },
-            el('div', { class: 'tb-titles' }, el('b', {}, '🎵 ', t('theme.name')), el('small', { class: 'tb-song' }, (s.themeTitle || '') + (uri ? ' · 🔁 ' + t('theme.loop') : ''))),
-            uri ? el('button', { class: 'tb-btn', type: 'button', title: t('theme.stop'), onclick: themeStop }, '⏹') : null,
+            el('div', { class: 'tb-titles' }, el('b', {}, '🎵 ', t('theme.name')), el('small', { class: 'tb-song' }, (s.themeTitle || '') + (canStop ? ' · 🔁 ' + t('theme.loop') : ''))),
+            canStop ? el('button', { class: 'tb-btn', type: 'button', title: t('theme.stop'), onclick: themeStop }, '⏹') : null,
             el('button', { class: 'tb-btn', type: 'button', title: t('theme.minimize'), onclick: () => { themeExpanded = false; renderThemeState(); } }, '▾')),
           host));
       $('#town').append(bar);
-      if (uri) {
+      if (mp3) {
+        themeAudioEl = el('audio', { controls: '', loop: '', preload: 'none', controlsList: 'nodownload', src: `/api/theme-audio?t=${encodeURIComponent(state.token)}&v=${s.themeAudio.at}` });
+        themeAudioEl.loop = true; themeAudioEl.controls = true; // repeat forever
+        themeAudioEl.addEventListener('play', () => setThemePlaying(true));
+        themeAudioEl.addEventListener('pause', () => setThemePlaying(false));
+        themeAudioEl.addEventListener('contextmenu', (e) => e.preventDefault());
+        host.append(themeAudioEl);
+      } else if (uri) {
         const [, kind, id] = uri.split(':');
         spotifyFrame = el('iframe', { src: `https://open.spotify.com/embed/${kind}/${id}`, height: 80, allow: 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture', title: s.themeTitle || 'Spotify' });
         host.append(spotifyFrame);
       } else host.append(themeSong('on-page')); // a YouTube link: a button that opens the small YouTube player
     }
     const song = bar.querySelector('.tb-song');
-    if (song) song.textContent = (s.themeTitle || '') + (uri ? ' · 🔁 ' + t('theme.loop') : '');
+    if (song) song.textContent = (s.themeTitle || '') + (canStop ? ' · 🔁 ' + t('theme.loop') : '');
     renderThemeState();
   }
   function themeSong(cls = '') {

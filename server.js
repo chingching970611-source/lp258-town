@@ -246,6 +246,26 @@ function storeImage(dataUrl, kind, owner) {
   saveFiles();
   return id;
 }
+// The host's own uploaded theme song (MP3). Kept on the server only (not in the code); members must be signed in to play it.
+const THEME_AUDIO_FILE = path.join(DATA_DIR, 'theme-audio.json');
+let themeAudio = null, themeAudioBuf = null, themeAudioDirty = false;
+function setThemeAudio(a) { themeAudio = a && a.data ? a : null; themeAudioBuf = themeAudio ? Buffer.from(themeAudio.data, 'base64') : null; }
+try { if (fs.existsSync(THEME_AUDIO_FILE)) setThemeAudio(JSON.parse(fs.readFileSync(THEME_AUDIO_FILE, 'utf8'))); } catch {}
+function saveThemeAudio() {
+  fs.writeFileSync(THEME_AUDIO_FILE + '.tmp', JSON.stringify(themeAudio || {}));
+  fs.renameSync(THEME_AUDIO_FILE + '.tmp', THEME_AUDIO_FILE);
+  themeAudioDirty = true;
+  gistSchedule();
+}
+function readRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => { size += c.length; if (size > max) { reject(httpErr(413, 'audio_too_large')); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
 function dropFile(id) { if (id && files[id]) { delete files[id]; saveFiles(); } }
 const tokens = new Map();
 const rebuildTokens = () => { tokens.clear(); for (const u of Object.values(db.users)) tokens.set(u.token, u.id); };
@@ -267,6 +287,7 @@ const GIST_ID = (process.env.GIST_ID || '').trim();
 const GH_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
 const GIST_FILE = 'lp258-db.json';
 const GIST_FILES_FILE = 'lp258-files.json';
+const GIST_THEME_FILE = 'lp258-theme-audio.json';
 const useGist = !!(GIST_ID && GH_TOKEN);
 let gistTimer = null, gistBusy = false, gistDirty = false;
 const ghHeaders = () => ({ Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'lp258-town', 'Content-Type': 'application/json' });
@@ -277,6 +298,8 @@ async function gistLoad() {
   const read = async (f) => (f ? ((f.truncated ? await (await fetch(f.raw_url, { headers: ghHeaders() })).text() : f.content) || '').trim() : '');
   const ff = await read(g.files && g.files[GIST_FILES_FILE]);
   if (ff && ff !== '{}') { try { files = JSON.parse(ff); fs.writeFileSync(FILES_FILE, ff); } catch {} }
+  const ta = await read(g.files && g.files[GIST_THEME_FILE]);
+  if (ta && ta !== '{}') { try { setThemeAudio(JSON.parse(ta)); fs.writeFileSync(THEME_AUDIO_FILE, ta); } catch {} }
   const trimmed = await read(g.files && g.files[GIST_FILE]);
   return trimmed && trimmed !== '{}' ? JSON.parse(trimmed) : null;
 }
@@ -288,8 +311,10 @@ async function gistSave() {
     const out = { [GIST_FILE]: { content: JSON.stringify(db) } };
     const withFiles = filesDirty;
     if (withFiles) { out[GIST_FILES_FILE] = { content: JSON.stringify(files) || '{}' }; filesDirty = false; }
+    const withTheme = themeAudioDirty;
+    if (withTheme) { out[GIST_THEME_FILE] = { content: JSON.stringify(themeAudio || {}) }; themeAudioDirty = false; }
     const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { method: 'PATCH', headers: ghHeaders(), body: JSON.stringify({ files: out }) });
-    if (!r.ok) { console.error('Gist save failed: HTTP', r.status); gistDirty = true; if (withFiles) filesDirty = true; }
+    if (!r.ok) { console.error('Gist save failed: HTTP', r.status); gistDirty = true; if (withFiles) filesDirty = true; if (withTheme) themeAudioDirty = true; }
   } catch (e) { console.error('Gist save failed:', e.message); gistDirty = true; }
   gistBusy = false;
   if (gistDirty) gistSchedule();
@@ -1708,8 +1733,51 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/healthz') return json(res, 200, { ok: true, online: online.size });
     if (url.pathname === '/api/stream' && req.method === 'GET') return handleStream(req, res, url);
+    if (url.pathname === '/api/admin/theme-audio' && req.method === 'POST') {
+      needAdmin(req);
+      const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+      if (!/^audio\/(mpeg|mp3|mp4|x-m4a|aac|ogg|wav|x-wav)$/.test(type)) throw httpErr(400, 'bad_audio');
+      const buf = await readRaw(req, 12 * 1024 * 1024);
+      if (buf.length < 1000) throw httpErr(400, 'bad_audio');
+      setThemeAudio({ type: type === 'audio/mp3' ? 'audio/mpeg' : type, data: buf.toString('base64'), size: buf.length, at: now() });
+      saveThemeAudio();
+      db.settings.themeAudio = { at: themeAudio.at, size: buf.length };
+      const title = line(decodeURIComponent(String(req.headers['x-title'] || '')), 60);
+      if (title) db.settings.themeTitle = title;
+      save();
+      broadcast('settings', db.settings);
+      return json(res, 200, { settings: db.settings });
+    }
+    if (url.pathname === '/api/admin/theme-audio-remove' && req.method === 'POST') {
+      needAdmin(req);
+      setThemeAudio(null);
+      saveThemeAudio();
+      delete db.settings.themeAudio;
+      save();
+      broadcast('settings', db.settings);
+      return json(res, 200, { settings: db.settings });
+    }
+    if (url.pathname === '/api/theme-audio' && (req.method === 'GET' || req.method === 'HEAD')) {
+      const tok = url.searchParams.get('t') || '';
+      const member = userFromToken(tok);
+      const isAdmin = (adminSessions.get(tok) || 0) > now();
+      if (!themeAudioBuf || !(isAdmin || (member && !member.banned))) return json(res, 404, { error: 'not_found' });
+      const total = themeAudioBuf.length;
+      const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+      let a = 0, b = total - 1, code = 200;
+      if (m && (m[1] || m[2])) {
+        if (m[1]) { a = Number(m[1]); if (m[2]) b = Math.min(total - 1, Number(m[2])); } else { a = Math.max(0, total - Number(m[2])); }
+        if (a > b || a >= total) { res.writeHead(416, { 'Content-Range': `bytes */${total}` }); return res.end(); }
+        code = 206;
+      }
+      const head = { 'Content-Type': themeAudio.type, 'Accept-Ranges': 'bytes', 'Content-Length': b - a + 1, 'Cache-Control': 'private, max-age=604800' };
+      if (code === 206) head['Content-Range'] = `bytes ${a}-${b}/${total}`;
+      res.writeHead(code, head);
+      return res.end(req.method === 'HEAD' ? undefined : themeAudioBuf.subarray(a, b + 1));
+    }
     if (url.pathname.startsWith('/api/file/') && req.method === 'GET') {
       const f = files[url.pathname.slice(10)];
+      if (!f) return json(res, 404, { error: 'not_found' });
       const tok = url.searchParams.get('t') || '';
       const isAdmin = (adminSessions.get(tok) || 0) > now();
       const member = userFromToken(tok);

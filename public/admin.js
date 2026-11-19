@@ -621,6 +621,34 @@
             } }, t('ad.save')),
             s.themeUrl ? el('a', { class: 'btn small ghost', href: s.themeUrl, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + t('ad.themeTry')) : null));
       })(),
+      (() => {
+        const s = (data && data.settings) || {};
+        const fileIn = el('input', { type: 'file', accept: 'audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,.mp3,.m4a', style: 'display:none' });
+        const status = el('span', { class: 'muted' }, s.themeAudio ? t('ad.mp3Now') + ' (' + (s.themeAudio.size / 1048576).toFixed(1) + ' MB)' : '');
+        fileIn.onchange = async () => {
+          const f = fileIn.files && fileIn.files[0];
+          if (!f) return;
+          if (f.size > 12 * 1024 * 1024) { toast(t('err.audio_too_large'), 'bad'); return; }
+          let type = (f.type || '').toLowerCase();
+          if (!type.startsWith('audio/')) type = /\.m4a$/i.test(f.name) ? 'audio/mp4' : 'audio/mpeg';
+          status.textContent = t('ad.mp3Uploading');
+          try {
+            const title = f.name.replace(/\.[^.]+$/, '').slice(0, 60);
+            const r = await fetch('/api/admin/theme-audio', { method: 'POST', headers: { 'Content-Type': type, Authorization: 'Bearer ' + token, 'X-Title': encodeURIComponent(title) }, body: f });
+            let d = null; try { d = await r.json(); } catch {}
+            if (r.status === 401) { showLogin(); throw new Error(t('err.admin_relogin')); }
+            if (!r.ok) throw new Error(d && d.error ? errText(d.error, d.params) : t('err.network', { code: r.status }));
+            data.settings = d.settings; toast(t('ad.mp3Done'), 'good'); render();
+          } catch (e) { status.textContent = ''; toast(e.message, 'bad'); }
+        };
+        return el('div', { class: 'card' }, el('h3', {}, t('ad.mp3Title')), el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.mp3Hint')),
+          el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, fileIn,
+            el('button', { class: 'btn primary small', onclick: () => fileIn.click() }, '⬆️ ' + t('ad.mp3Pick')),
+            s.themeAudio ? el('button', { class: 'btn small ghost', onclick: async () => {
+              try { const r = await api('POST', '/api/admin/theme-audio-remove', {}); data.settings = r.settings; toast(t('ad.mp3Removed'), 'good'); render(); } catch (e) { toast(e.message, 'bad'); }
+            } }, '🗑 ' + t('ad.mp3Remove')) : null,
+            status));
+      })(),
       el('div', { class: 'card' }, el('h3', {}, t('ad.seasonTitle')),
         el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.seasonHint')),
         el('div', { class: 'cz-opts' }, ['auto', 'spring', 'summer', 'autumn', 'winter'].map((sn) => el('button', {
