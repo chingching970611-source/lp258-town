@@ -381,3 +381,24 @@ select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; bo
 .push-ask .push-bell { font-size: 54px; animation: bell 1.6s ease-in-out infinite; transform-origin: 50% 10%; }
 .push-ask .dlg-acts { justify-content: center; }
 @keyframes bell { 0%, 60%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-14deg); } }
+
+/* ---------- games on phones: full screen, sized to fit the screen height ---------- */
+.game-stage, .game-stage * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.mg-card { touch-action: manipulation; }
+@media (max-width: 640px) {
+  .panel.game-full { top: 0; left: 0; right: 0; bottom: 0; width: auto; border-radius: 0; z-index: 60; animation: none;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .panel.game-full .tabs { display: none; }
+  .panel.game-full .panel-body { overscroll-behavior: contain; padding-bottom: 10px; }
+  .panel.game-full .game-box { gap: 6px; }
+  .panel.game-full .game-box > .muted { font-size: 12px; line-height: 1.35; }
+  .panel.game-full .game-idle { padding: 18px 0; font-size: 70px; }
+  .panel.game-full .game-stage { margin: 0 auto; }
+  /* canvas games are 34:42 — leave room for the header, HUD and start button */
+  .panel.game-full .gs-slice, .panel.game-full .gs-stars { max-width: min(340px, calc((100vh - 250px) * 34 / 42)); max-width: min(340px, calc((100dvh - 250px) * 34 / 42)); }
+  .panel.game-full .gs-memory { max-width: min(340px, calc(100vh - 270px)); max-width: min(340px, calc(100dvh - 270px)); }
+  .panel.game-full .gs-whack { max-width: min(340px, calc(100vh - 280px)); max-width: min(340px, calc(100dvh - 280px)); }
+  .panel.game-full .gs-caterpillar { max-width: min(340px, calc(100vh - 370px)); max-width: min(340px, calc(100dvh - 370px)); }
+  .panel.game-full .gs-quiz { max-width: 100%; }
+  body:has(.panel.game-full) #testBanner { display: none; }
+}

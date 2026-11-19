@@ -877,7 +877,7 @@
     renderPanel();
   }
   function closePanel() {
-    stopGame(); stopPanelAnim();
+    stopGame(); stopPanelAnim(); setGameFull(false);
     currentPanel = null;
     $('#panel').classList.add('hidden');
     document.querySelectorAll('.nav button').forEach((b) => b.classList.remove('on'));
@@ -890,7 +890,9 @@
     return el('div', { class: 'tabs' }, items.map(([id, label]) =>
       el('button', { class: tabs[group] === id ? 'on' : '', onclick: () => { stopGame(); stopPanelAnim(); tabs[group] = id; renderPanel(); } }, label)));
   }
+  const setGameFull = (on) => $('#panel').classList.toggle('game-full', !!on);
   function renderPanel() {
+    setGameFull(false);
     const body = $('#panelBody');
     const scroll = body.scrollTop;
     body.replaceChildren();
@@ -1205,7 +1207,8 @@
           el('div', { class: 'tag y' }, t('mini.best') + ((games[g] && games[g].best) || 0))))));
     }
     const g = miniView;
-    const box = el('div', { class: 'game-stage' });
+    const box = el('div', { class: 'game-stage gs-' + g });
+    setGameFull(true);
     const best = el('b', {}, (games[g] && games[g].best) || 0);
     const startBtn = el('button', { class: 'btn primary big' }, t('mini.start'));
     const wrap = el('div', { class: 'game-box' },
@@ -1336,7 +1339,8 @@
   // ---------- PK
   let pkDraft = { to: '', game: 'stars' };
   function playPK(p, onDone) {
-    const box = el('div', { class: 'game-stage' });
+    const box = el('div', { class: 'game-stage gs-' + p.game });
+    setGameFull(true);
     const body = $('#panelBody');
     body.replaceChildren(el('div', { class: 'game-box' },
       el('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' },
