@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#8FD97A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="LP 258">
   <title data-i18n-doc="app.name">LP 258 小镇</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
@@ -40,6 +47,8 @@
       <div class="logo">🏡 <b>LP 258</b></div>
       <button class="pill" id="onlinePill" data-i18n-title="top.friends"><span class="dot"></span><span id="onlineCount">0</span></button>
       <div class="ticker" id="ticker"><span>📢</span><div class="ticker-text" id="tickerText"></div></div>
+      <button class="pill season-pill" id="seasonPill" type="button"></button>
+      <button class="pill" id="musicBtn" type="button">🎵</button>
       <button class="pill lang-btn" type="button" data-i18n="lang.switch"></button>
       <button class="pill points" id="pointsPill" data-i18n-title="top.points">⭐ <span id="myPoints">0</span></button>
     </header>
@@ -47,6 +56,7 @@
     <div id="reminderBar" class="reminder hidden"></div>
     <div id="chatLog" class="chat-log"></div>
     <button id="zoneBtn" class="zone-btn hidden"></button>
+    <div id="joy" class="joy hidden"><div class="knob"></div></div>
 
     <div class="bottom">
       <div class="chatbar">
@@ -78,6 +88,7 @@
   <script src="i18n.js"></script>
   <script src="avatar.js"></script>
   <script src="room.js"></script>
+  <script src="season.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

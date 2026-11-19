@@ -341,6 +341,15 @@
       el('div', { class: 'toolbar' }, el('h2', {}, t('ad.settingsTitle'))),
       el('div', { class: 'card' }, el('h3', {}, t('me.lang')),
         el('div', { class: 'cz-opts' }, ['zh', 'en'].map((l) => el('button', { class: I18N.lang === l ? 'on' : '', onclick: () => { if (I18N.lang !== l) I18N.setLang(l); } }, t('lang.' + l))))),
+      el('div', { class: 'card' }, el('h3', {}, t('ad.seasonTitle')),
+        el('p', { class: 'muted', style: 'margin:0 0 8px' }, t('ad.seasonHint')),
+        el('div', { class: 'cz-opts' }, ['auto', 'spring', 'summer', 'autumn', 'winter'].map((sn) => el('button', {
+          class: ((data.settings && data.settings.season) || 'auto') === sn ? 'on' : '',
+          onclick: async () => {
+            try { const r = await api('POST', '/api/admin/settings', { season: sn }); data.settings = r.settings; toast(t('ad.seasonSaved'), 'good'); render(); }
+            catch (e) { toast(e.message, 'bad'); }
+          },
+        }, sn === 'auto' ? t('ad.seasonAuto') : Season.ICON[sn] + ' ' + t('season.' + sn))))),
       el('div', { class: 'card' }, el('h3', {}, t('ad.pwTitle')),
         data.passwordFromEnv ? el('p', { class: 'muted' }, t('ad.pwFromEnv'))
           : el('div', {}, p1, p2, el('button', { class: 'btn primary', style: 'margin-top:8px', onclick: async () => {

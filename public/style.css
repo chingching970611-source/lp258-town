@@ -230,3 +230,18 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .quiz-answers .btn:hover { border-color: var(--primary); background: #FFF0F4; }
 .modal-card .room-view { width: 100%; }
 @media (min-width: 641px) { .modal-card:has(.room-view) { width: min(520px, 100%); } }
+
+/* ---------- seasons, music, phone joystick ---------- */
+.season-pill { background: #fff; }
+.joy { position: absolute; left: 18px; bottom: calc(150px + env(safe-area-inset-bottom)); width: 112px; height: 112px; border-radius: 50%;
+  background: rgba(255,255,255,.55); border: 3px solid rgba(255,255,255,.9); box-shadow: 0 6px 20px rgba(0,0,0,.15); touch-action: none; z-index: 4; }
+.joy .knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+  background: var(--primary); box-shadow: 0 3px 0 var(--primary-d), 0 4px 12px rgba(0,0,0,.2); pointer-events: none; transition: transform .05s; }
+@media (max-width: 640px) {
+  .topbar { gap: 5px; }
+  .pill { padding: 5px 9px; font-size: 13px; }
+  .season-pill { max-width: 74px; overflow: hidden; }
+  .chat-log { top: 56px; }
+  .chat-log div:nth-last-child(n+4) { display: none; }
+  .zone-btn { bottom: calc(150px + env(safe-area-inset-bottom)); left: auto; right: 14px; transform: none; animation: none; font-size: 15px; padding: 10px 14px; }
+}

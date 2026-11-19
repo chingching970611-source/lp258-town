@@ -40,6 +40,7 @@ function localAt(days, h, m = 0) {
 function seedDb() {
   return {
     meta: { v: DB_VERSION },
+    settings: { season: 'auto' },
     users: {},
     events: [
       { id: uid(4), title: '冬日聚会 Winter Meetup', venue: 'LP 258 HQ', address: '（请在后台更新地址）', date: localAt(3, 19, 30), endDate: localAt(3, 22, 30),
@@ -655,6 +656,7 @@ route('GET /api/admin/overview', async (req, res) => {
     live: live ? { question: live.question, endsAt: live.endsAt, count: live.answers.size } : null,
     lastLive: lastLiveResult,
     passwordFromEnv: !!process.env.ADMIN_PASSWORD,
+    settings: db.settings,
   });
 });
 
@@ -790,6 +792,18 @@ route('POST /api/admin/live/start', async (req, res, body) => {
   json(res, 200, { ok: true });
 });
 
+const SEASONS = ['auto', 'spring', 'summer', 'autumn', 'winter'];
+route('POST /api/admin/settings', async (req, res, body) => {
+  needAdmin(req);
+  if (body.season !== undefined) {
+    if (!SEASONS.includes(body.season)) throw httpErr(400, 'bad_request');
+    db.settings.season = body.season;
+  }
+  save();
+  broadcast('settings', db.settings);
+  json(res, 200, { settings: db.settings });
+});
+
 route('POST /api/admin/password', async (req, res, body) => {
   needAdmin(req);
   if (process.env.ADMIN_PASSWORD) throw httpErr(400, 'pw_env');
@@ -824,6 +838,7 @@ function handleStream(req, res, url) {
     chat: visibleChat(u.id),
     announcements: db.announcements.slice(-5),
     live: liveForClient(u.id),
+    settings: db.settings,
   });
   if (isNew) broadcast('join', presence(u), u.id);
   req.on('close', () => {

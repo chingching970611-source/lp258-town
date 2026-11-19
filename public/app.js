@@ -79,7 +79,21 @@
   document.querySelectorAll('.lang-btn').forEach((b) => { b.onclick = () => I18N.setLang(I18N.lang === 'zh' ? 'en' : 'zh'); });
 
   // ============================================================ state
-  const state = { token: store.get('lp258_token'), me: null, meId: null, players: new Map(), chat: [], content: null, announcements: [], dm: null, live: null, target: null, keys: {} };
+  const state = { token: store.get('lp258_token'), me: null, meId: null, players: new Map(), chat: [], content: null, announcements: [], dm: null, live: null, target: null, keys: {}, joy: null, settings: { season: 'auto' } };
+  const isPhone = () => window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 700;
+  const season = () => (state.settings && Season.ORDER.includes(state.settings.season) ? state.settings.season : Season.fromDate());
+  const theme = () => Season.THEMES[season()];
+
+  // ---------- music (starts on first tap, because browsers block autoplay)
+  let musicOn = store.get('lp258_music') !== '0';
+  function updateSeasonUi() {
+    const sp = $('#seasonPill'); if (sp) sp.textContent = Season.ICON[season()] + ' ' + t('season.' + season());
+    const mb = $('#musicBtn'); if (mb) { mb.textContent = musicOn ? '🎵' : '🔇'; mb.title = musicOn ? t('music.off') : t('music.on'); }
+  }
+  function syncMusic() { if (musicOn && !$('#town').classList.contains('hidden')) Season.Music.play(season()); else Season.Music.stop(); }
+  const firstGesture = () => { window.removeEventListener('pointerdown', firstGesture, true); window.removeEventListener('keydown', firstGesture, true); syncMusic(); };
+  window.addEventListener('pointerdown', firstGesture, true);
+  window.addEventListener('keydown', firstGesture, true);
   const WORLD = { w: 1600, h: 1020 };
   const PLAZA = { x: 800, y: 500 };
 
@@ -157,9 +171,11 @@
     $('#join').classList.add('hidden');
     $('#town').classList.remove('hidden');
     updateHud();
+    updateSeasonUi();
     connect();
     loadContent();
     resize();
+    syncMusic();
     if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
     if (!store.get('lp258_tip')) { store.set('lp258_tip', '1'); setTimeout(() => toast(t('tip.move'), 'info', 6500), 800); }
   }
@@ -184,6 +200,7 @@
       if (keep && meP()) { meP().x = keep.x; meP().y = keep.y; }
       state.chat = d.chat || [];
       state.announcements = d.announcements || [];
+      if (d.settings) { state.settings = d.settings; updateSeasonUi(); }
       renderTicker();
       updateOnline();
       if (currentPanel === 'chat') renderPanel();
@@ -218,6 +235,7 @@
     on('poke', (d) => { toast(t('toast.poke', { name: d.name }), 'info', 4500); logLine(el('div', { class: 'dm' }, '👋 ', t('log.poke', { name: d.name }))); });
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
     on('live', (d) => openLive(d));
+    on('settings', (d) => { const before = season(); state.settings = d; updateSeasonUi(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) Season.Music.play(season()); } });
     on('liveCount', (d) => { if (state.live) { state.live.count = d.count; const c = $('#liveCount'); if (c) c.textContent = t('live.count', { n: d.count }); } });
     on('liveResult', showLiveResult);
     on('kicked', (d) => { es.close(); logout(t('kicked.' + (d.key || 'banned'))); });
@@ -310,7 +328,8 @@
     view.dpr = Math.min(2, window.devicePixelRatio || 1);
     view.w = window.innerWidth; view.h = window.innerHeight;
     cv.width = Math.round(view.w * view.dpr); cv.height = Math.round(view.h * view.dpr);
-    view.scale = clamp(Math.min(view.w / 1000, view.h / 720), 0.58, 1.3);
+    view.scale = isPhone() ? clamp(Math.min(view.w / 520, view.h / 760), 0.62, 1.0) : clamp(Math.min(view.w / 1000, view.h / 720), 0.58, 1.3);
+    const joy = $('#joy'); if (joy) joy.classList.toggle('hidden', !window.matchMedia('(pointer: coarse)').matches);
   }
   window.addEventListener('resize', resize);
 
@@ -343,8 +362,10 @@
   }
   function drawTree(x, y) {
     ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x, y + 4, 30, 9, 0, 0, Math.PI * 2); ctx.fill();
-    R(ctx, x - 6, y - 26, 12, 30, 4); ctx.fillStyle = '#A56B3F'; ctx.fill();
-    for (const [dx, dy, r, c] of [[-14, -38, 20, '#5DBB5A'], [14, -38, 20, '#5DBB5A'], [0, -56, 24, '#6CCB63'], [-6, -62, 10, '#8BDD7F']]) { circ(x + dx, y + dy, r); ctx.fillStyle = c; ctx.fill(); }
+    R(ctx, x - 6, y - 26, 12, 30, 4); ctx.fillStyle = theme().trunk; ctx.fill();
+    const th = theme(), cn = th.canopy;
+    for (const [dx, dy, r, c] of [[-14, -38, 20, cn[0]], [14, -38, 20, cn[0]], [0, -56, 24, cn[1]], [-6, -62, 10, cn[2]]]) { circ(x + dx, y + dy, r); ctx.fillStyle = c; ctx.fill(); }
+    if (th.snow) { ctx.fillStyle = '#FFFFFF'; for (const [dx, dy, rx] of [[-14, -54, 13], [14, -54, 13], [0, -76, 15]]) { ctx.beginPath(); ctx.ellipse(x + dx, y + dy, rx, 6, 0, Math.PI, 0); ctx.fill(); } }
   }
   function drawBench(x, y) {
     R(ctx, x - 34, y - 20, 68, 10, 4); ctx.fillStyle = '#C98B52'; ctx.fill();
@@ -381,6 +402,7 @@
     const sw = ctx.measureText(name).width + 34;
     ctx.fillStyle = 'rgba(0,0,0,.15)'; R(ctx, cx - sw / 2, y - 14, sw, 40, 16); ctx.fill();
     R(ctx, cx - sw / 2, y - 18, sw, 40, 16); ctx.fillStyle = '#fff'; ctx.fill();
+    if (theme().snow) { ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.moveTo(x + 10, y + 4); for (let i = 0; i <= 10; i++) ctx.quadraticCurveTo(x + 10 + (i - 0.5) * (w - 20) / 10, y + (i % 2 ? 14 : 8), x + 10 + i * (w - 20) / 10, y + 4); ctx.lineTo(x + w - 10, y - 2); ctx.lineTo(x + 10, y - 2); ctx.fill(); }
     txt(name, cx, y + 2, 21, '#3A2E3F');
     FURNITURE[z.id](z, tm);
   }
@@ -473,23 +495,24 @@
     },
   };
   function drawWorld(tm) {
-    ctx.fillStyle = '#9BE08A'; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
-    ctx.strokeStyle = '#88D177'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    const th = theme();
+    ctx.fillStyle = th.grass; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+    ctx.strokeStyle = th.tuft; ctx.lineWidth = 2; ctx.lineCap = 'round';
     for (const g of TUFTS) { ctx.beginPath(); ctx.moveTo(g.x - 4, g.y - 6); ctx.lineTo(g.x, g.y); ctx.lineTo(g.x + 4, g.y - 6); ctx.stroke(); }
-    for (const f of FLOWERS) { circ(f.x, f.y, 3.5); ctx.fillStyle = f.c; ctx.fill(); circ(f.x, f.y, 1.4); ctx.fillStyle = '#FFB000'; ctx.fill(); }
-    for (const [lw, c] of [[78, '#E3CB92'], [64, '#F6E7BF']]) {
+    FLOWERS.forEach((f, i) => { circ(f.x, f.y, 3.5); ctx.fillStyle = th.flowers[i % th.flowers.length]; ctx.fill(); circ(f.x, f.y, 1.4); ctx.fillStyle = '#FFB000'; ctx.fill(); });
+    for (const [lw, c] of [[78, th.path[0]], [64, th.path[1]]]) {
       ctx.strokeStyle = c; ctx.lineWidth = lw;
       for (const z of ZONES) { ctx.beginPath(); ctx.moveTo(PLAZA.x, PLAZA.y); ctx.lineTo(z.x + z.w / 2, z.y + z.h / 2); ctx.stroke(); }
     }
-    circ(PLAZA.x, PLAZA.y, 180); ctx.fillStyle = '#E3CB92'; ctx.fill();
-    circ(PLAZA.x, PLAZA.y, 170); ctx.fillStyle = '#F6E7BF'; ctx.fill();
+    circ(PLAZA.x, PLAZA.y, 180); ctx.fillStyle = th.path[0]; ctx.fill();
+    circ(PLAZA.x, PLAZA.y, 170); ctx.fillStyle = th.path[1]; ctx.fill();
     ctx.strokeStyle = '#EAD7A6'; ctx.lineWidth = 3; circ(PLAZA.x, PLAZA.y, 120); ctx.stroke(); circ(PLAZA.x, PLAZA.y, 150); ctx.stroke();
     for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; circ(PLAZA.x + Math.cos(a) * 135, PLAZA.y + Math.sin(a) * 135, 4); ctx.fillStyle = '#EAD7A6'; ctx.fill(); }
     for (const z of ZONES) drawRoom(z, tm);
     const fx = PLAZA.x, fy = PLAZA.y - 20;
     ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(fx, fy + 8, 64, 22, 0, 0, Math.PI * 2); ctx.fill();
     circ(fx, fy, 60); ctx.fillStyle = '#C9D6E3'; ctx.fill();
-    circ(fx, fy, 50); ctx.fillStyle = '#7FD3F7'; ctx.fill();
+    circ(fx, fy, 50); ctx.fillStyle = th.water; ctx.fill();
     for (let i = 0; i < 3; i++) { const r = 12 + ((tm / 30 + i * 13) % 38); ctx.strokeStyle = `rgba(255,255,255,${0.7 - r / 55})`; ctx.lineWidth = 2; circ(fx, fy, r); ctx.stroke(); }
     circ(fx, fy, 12); ctx.fillStyle = '#B0BFD0'; ctx.fill();
     for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + tm / 900; const k = ((tm / 400 + i / 6) % 1); circ(fx + Math.cos(a) * 26 * k, fy - 18 + Math.sin(a) * 10 * k + k * k * 20, 3); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill(); }
@@ -551,7 +574,7 @@
     const dt = Math.min(0.05, (tm - lastT) / 1000);
     lastT = tm;
     update(dt, tm);
-    render(tm);
+    render(tm, dt);
     requestAnimationFrame(loop);
   }
   function update(dt, tm) {
@@ -559,6 +582,7 @@
     if (me) {
       let dx = 0, dy = 0;
       const k = state.keys;
+      if (state.joy) { dx += state.joy.x; dy += state.joy.y; }
       if (k.ArrowLeft || k.a) dx -= 1;
       if (k.ArrowRight || k.d) dx += 1;
       if (k.ArrowUp || k.w) dy -= 1;
@@ -595,7 +619,7 @@
       else p.walking = false;
     }
   }
-  function render(tm) {
+  function render(tm, dt = 0.016) {
     const me = meP();
     const s = view.scale, dpr = view.dpr;
     const vw = view.w / s, vh = view.h / s;
@@ -617,6 +641,8 @@
     const list = [...state.players.values()].sort((a, b) => a.y - b.y);
     for (const p of list) { Avatar.draw(ctx, p.avatar, p.x, p.y, { walking: p.walking, phase: p.phase, idle: tm / 1000 + p.seed }); drawTag(p, p.id === state.meId); }
     for (const p of list) { drawEmote(p, tm); drawBubble(p, tm); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    Season.drawWeather(ctx, season(), view.w, view.h, dt, tm);
   }
 
   const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable); };
@@ -1181,6 +1207,10 @@
       const code = el('div', { class: 'code-box', title: t('me.reveal') }, me.code);
       code.onclick = () => code.classList.toggle('show');
       wrap.append(
+        installCard(),
+        el('div', { class: 'card' }, el('h3', {}, t('music.title')),
+          el('div', { class: 'cz-opts' }, [[true, t('music.onLabel')], [false, t('music.offLabel')]].map(([v, label]) => el('button', { class: musicOn === v ? 'on' : '', onclick: () => { musicOn = v; store.set('lp258_music', v ? '1' : '0'); updateSeasonUi(); syncMusic(); renderPanel(); } }, label))),
+          el('p', { class: 'muted', style: 'margin:6px 0 0' }, Season.ICON[season()] + ' ' + t('season.info', { name: t('season.' + season()) }))),
         el('div', { class: 'card' }, el('h3', {}, t('me.lang')),
           el('div', { class: 'cz-opts' }, ['zh', 'en'].map((l) => el('button', { class: I18N.lang === l ? 'on' : '', onclick: () => { if (I18N.lang !== l) I18N.setLang(l); } }, t('lang.' + l))))),
         el('div', { class: 'card' },
@@ -1232,6 +1262,41 @@
       r.winners.length ? el('p', { style: 'text-align:center' }, '🏅 ' + r.winners.slice(0, 5).join(I18N.lang === 'zh' ? '、' : ', ')) : null,
       el('div', { style: 'text-align:center' }, el('button', { class: 'btn primary', onclick: closeModal }, t('ok')))), 'live');
   }
+
+  // ============================================================ phone: joystick, music, install
+  (function joystick() {
+    const joy = $('#joy'), knob = joy && joy.querySelector('.knob');
+    if (!joy) return;
+    let id = null;
+    const setFrom = (e) => {
+      const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, max = r.width / 2 - 18;
+      let dx = e.clientX - cx, dy = e.clientY - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > max) { dx = dx / d * max; dy = dy / d * max; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      state.joy = d < 8 ? null : { x: dx / max, y: dy / max };
+      state.target = null;
+    };
+    const end = () => { id = null; state.joy = null; knob.style.transform = ''; };
+    joy.addEventListener('pointerdown', (e) => { id = e.pointerId; try { joy.setPointerCapture(id); } catch {} setFrom(e); e.preventDefault(); });
+    joy.addEventListener('pointermove', (e) => { if (e.pointerId === id) setFrom(e); });
+    joy.addEventListener('pointerup', end); joy.addEventListener('pointercancel', end);
+  })();
+  $('#musicBtn').onclick = () => { musicOn = !musicOn; store.set('lp258_music', musicOn ? '1' : '0'); updateSeasonUi(); syncMusic(); toast(musicOn ? t('music.playing', { name: t('season.' + season()) }) : t('music.muted'), 'info', 2000); };
+  $('#seasonPill').onclick = () => toast(Season.ICON[season()] + ' ' + t('season.info', { name: t('season.' + season()) }), 'info', 4000);
+
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+  function installCard() {
+    let body;
+    if (isStandalone()) body = el('p', { class: 'muted', style: 'margin:0' }, t('install.done'));
+    else if (installPrompt) body = el('button', { class: 'btn primary', onclick: async () => { installPrompt.prompt(); const r = await installPrompt.userChoice; if (r.outcome === 'accepted') toast(t('install.thanks'), 'good'); installPrompt = null; renderPanel(); } }, t('install.btn'));
+    else body = el('p', { class: 'muted', style: 'margin:0;white-space:pre-line' }, isIOS() ? t('install.ios') : t('install.other'));
+    return el('div', { class: 'card' }, el('h3', {}, t('install.title')), body);
+  }
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
   // ============================================================ boot
   (async function boot() {

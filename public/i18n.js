@@ -102,6 +102,13 @@
     'err.answer_not_in_options': '正确答案不在选项里', 'err.live_running': '已经有一场即时问答正在进行', 'err.pw_env': '密码由 ADMIN_PASSWORD 环境变量设定，请在那里修改',
     'err.pw_short': '密码至少 8 个字符', 'err.server_error': '服务器错误', 'err.not_connected': '连接中断，正在重连', 'err.too_large': '内容太长', 'err.forbidden': '没有权限',
 
+    'season.spring': '春天', 'season.summer': '夏天', 'season.autumn': '秋天', 'season.winter': '冬天',
+    'season.changed': '季节变成了{name}！', 'season.info': '现在是{name}，小镇的天气和音乐会跟着季节自动变化',
+    'music.on': '打开音乐', 'music.off': '关闭音乐', 'music.playing': '🎵 正在播放{name}音乐', 'music.muted': '🔇 已静音',
+    'music.title': '🎵 背景音乐', 'music.onLabel': '🎵 开', 'music.offLabel': '🔇 关',
+    'install.title': '📱 安装到手机', 'install.btn': '📲 安装 LP 258 小镇', 'install.done': '✅ 已经安装，正在用 App 模式', 'install.thanks': '安装好了！可以在主屏幕打开 🎉',
+    'install.ios': 'iPhone：用 Safari 打开 → 点底部「分享」按钮 → 选「添加到主屏幕」', 'install.other': 'Android：用 Chrome 打开 → 点右上角 ⋮ → 选「添加到主屏幕」或「安装应用」',
+    'ad.seasonTitle': '🌦️ 季节与天气', 'ad.seasonAuto': '🔄 自动（按月份）', 'ad.seasonHint': '默认按月份自动切换：3–5 月春天、6–8 月夏天、9–11 月秋天、12–2 月冬天。也可以在这里固定一个季节（例如办圣诞活动时选冬天）。', 'ad.seasonSaved': '季节已更新，所有人会即时看到 🌦️',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 主持人后台', 'ad.only': '只限主持人 / 管理员登录', 'ad.pwPh': '管理员密码', 'ad.login': '登录',
     'ad.pwHint': '第一次启动时，密码会保存在服务器的 data/admin-password.txt。', 'ad.toTown': '🏡 去小镇', 'ad.refresh': '🔄 刷新', 'ad.logout': '退出',
@@ -244,6 +251,13 @@
     'err.pw_env': 'The password comes from the ADMIN_PASSWORD environment variable — change it there', 'err.pw_short': 'Password must be at least 8 characters',
     'err.server_error': 'Server error', 'err.not_connected': 'Connection lost, reconnecting', 'err.too_large': 'Too long', 'err.forbidden': 'Not allowed',
 
+    'season.spring': 'Spring', 'season.summer': 'Summer', 'season.autumn': 'Autumn', 'season.winter': 'Winter',
+    'season.changed': 'The season changed to {name}!', 'season.info': "It's {name} — the town's weather and music change with the seasons",
+    'music.on': 'Turn music on', 'music.off': 'Turn music off', 'music.playing': '🎵 Playing {name} music', 'music.muted': '🔇 Muted',
+    'music.title': '🎵 Background music', 'music.onLabel': '🎵 On', 'music.offLabel': '🔇 Off',
+    'install.title': '📱 Install on your phone', 'install.btn': '📲 Install LP 258 Town', 'install.done': '✅ Installed — you are using the app', 'install.thanks': 'Installed! Open it from your home screen 🎉',
+    'install.ios': 'iPhone: open in Safari → tap the Share button → choose "Add to Home Screen"', 'install.other': 'Android: open in Chrome → tap ⋮ (top right) → choose "Add to Home screen" or "Install app"',
+    'ad.seasonTitle': '🌦️ Season & weather', 'ad.seasonAuto': '🔄 Automatic (by month)', 'ad.seasonHint': 'By default the season follows the month: Mar–May spring, Jun–Aug summer, Sep–Nov autumn, Dec–Feb winter. You can also lock one here (e.g. winter for a Christmas party).', 'ad.seasonSaved': 'Season updated — everyone sees it right away 🌦️',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 Host Backend', 'ad.only': 'Hosts / admins only', 'ad.pwPh': 'Admin password', 'ad.login': 'Sign in',
     'ad.pwHint': "On first start, the password is saved on the server in data/admin-password.txt.", 'ad.toTown': '🏡 Open town', 'ad.refresh': '🔄 Refresh', 'ad.logout': 'Sign out',
