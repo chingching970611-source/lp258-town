@@ -378,13 +378,55 @@
     on('join', (p) => { addPlayer(p); updateOnline(); logLine(el('div', { class: 'sys' }, t('log.joined', { name: p.nickname }))); });
     on('leave', (d) => { state.players.delete(d.id); updateOnline(); });
     on('move', (d) => { const p = state.players.get(d.id); if (p) { p.tx = d.x; p.ty = d.y; } });
+    on('moves', (list) => {
+      const tm = performance.now();
+      for (const [id, x, y] of list) {
+        if (id === state.meId) continue;
+        const p = state.players.get(id);
+        if (!p) continue;
+        const gap = clamp(tm - (p.lastUpd || tm - 120), 60, 400) / 1000;
+        p.lastUpd = tm;
+        p.speed = clamp(Math.hypot(x - p.x, y - p.y) / gap, 60, 900);
+        p.tx = x; p.ty = y;
+      }
+    });
     on('chat', addChat);
+    on('pkLiveInvite', onLiveInvite);
+    on('pkLiveStart', onLiveStart);
+    on('pkLiveScore', (d) => {
+      const L = liveRoom;
+      if (!L || L.room.id !== d.id) return;
+      const up = d.score - L.opp;
+      L.opp = d.score;
+      if (up > 0) popLive(L.oppSide.pop, '+' + up);
+      if (d.final) { L.oppFinal = true; L.oppSide.mark.classList.remove('hidden'); }
+      liveShow(L);
+    });
+    on('pkLiveEmote', (d) => { if (liveRoom && liveRoom.room.id === d.id) popLive(liveRoom.oppSide.pop, d.e, true); });
+    on('pkLiveCancel', (d) => {
+      const msg = t('pk.lc.' + d.reason, { name: d.name });
+      if (liveWait && liveWait.id === d.id) { liveWait.stop(); liveWait = null; closeModal(); toast(msg, 'info', 5000); }
+      if (liveIncoming && liveIncoming.id === d.id) { liveIncoming.stop(); liveIncoming = null; closeModal(); toast(msg, 'info', 4000); }
+    });
+    on('pkLiveResult', (p) => {
+      const L = liveRoom;
+      liveRoom = null;
+      stopGame();
+      if (L && currentPanel === 'games') { tabs.games = 'pk'; renderPanel(); }
+      loadContent();
+      pkResultModal(p);
+    });
     on('emote', (d) => { const p = state.players.get(d.id); if (p) p.emote = { e: d.emoji, t: performance.now() }; });
     on('profile', (u) => {
       const p = state.players.get(u.id);
       if (p) Object.assign(p, { nickname: u.nickname, avatar: u.avatar, status: u.status, points: u.points, room: u.room });
       if (u.id === state.meId && state.me) { Object.assign(state.me, u); updateHud(); }
-      if (currentPanel === 'online') renderPanel();
+      const c = state.content;
+      if (c) {
+        const lists = [c.leaderboard, c.pkBoard, c.members, ...Object.values(c.games || {}).map((g) => g && g.board)];
+        for (const l of lists) for (const x of l || []) if (x.id === u.id) { x.avatar = u.avatar; x.nickname = u.nickname; }
+      }
+      if (currentPanel === 'online' || currentPanel === 'rank') renderPanel();
     });
     on('points', (d) => {
       const p = state.players.get(d.id);
@@ -397,7 +439,7 @@
       state.content.minigame = d.minigame;
       if (currentPanel === 'rank') renderPanel();
     });
-    on('content', () => { clearTimeout(contentTimer); contentTimer = setTimeout(loadContent, 300); });
+    on('content', () => queueContent());
     on('announce', (a) => { state.announcements.push(a); renderTicker(); toast('📢 ' + pickLang(a.text, a.textEn), 'info', 6000); });
     on('announceUpdated', (a) => { const x = state.announcements.find((y) => y.id === a.id); if (x) { x.text = a.text; x.textEn = a.textEn; } renderTicker(); });
     on('announceRemoved', (d) => { state.announcements = state.announcements.filter((a) => a.id !== d.id); renderTicker(); });
@@ -416,8 +458,15 @@
     };
   }
 
-  let contentTimer = null;
+  let contentTimer = null, contentStale = false, lastContentAt = 0;
+  function queueContent() {
+    if (gameRunning || liveRoom) { contentStale = true; return; } // after the round
+    clearTimeout(contentTimer);
+    contentTimer = setTimeout(loadContent, Math.max(300, 3000 - (Date.now() - lastContentAt)));
+  }
+  function flushContent() { if (contentStale) { contentStale = false; queueContent(); } }
   async function loadContent() {
+    lastContentAt = Date.now();
     try {
       state.content = await api('GET', '/api/content');
       const pkIn = (state.content.pk && state.content.pk.incoming.length) || 0;
@@ -425,7 +474,7 @@
       if (gb) { let b = gb.querySelector('.badge'); if (!b) { b = el('b', { class: 'badge' }); gb.append(b); } b.textContent = pkIn; b.classList.toggle('hidden', !pkIn); }
       if (state.content.settings) { state.settings = state.content.settings; updateSeasonUi(); }
       checkReminders();
-      if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && gameRunning)) renderPanel();
+      if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && (gameRunning || liveRoom))) renderPanel();
     } catch (e) { if (e.status === 401) logout(t('err.relogin')); }
   }
   function updateHud() { if (state.me) $('#myPoints').textContent = state.me.points || 0; }
@@ -693,20 +742,35 @@
       if (!lb.length) txt(t('rank.first'), cx, base - 120, 15, '#B98800');
     },
   };
+  let ground = null;
+  function groundLayer(th) {
+    const k = Math.min(2, Math.max(1, Math.round(view.dpr * view.scale * 4) / 4));
+    const key = [k, th.grass, th.tuft, th.path.join(), th.flowers.join()].join('|');
+    if (ground && ground.key === key) return ground.c;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(WORLD.w * k); c.height = Math.ceil(WORLD.h * k);
+    const g = c.getContext('2d');
+    g.scale(k, k);
+    const ci = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); };
+    g.fillStyle = th.grass; g.fillRect(0, 0, WORLD.w, WORLD.h);
+    g.strokeStyle = th.tuft; g.lineWidth = 2; g.lineCap = 'round';
+    g.beginPath(); for (const tf of TUFTS) { g.moveTo(tf.x - 4, tf.y - 6); g.lineTo(tf.x, tf.y); g.lineTo(tf.x + 4, tf.y - 6); } g.stroke();
+    FLOWERS.forEach((f, i) => { ci(f.x, f.y, 3.5); g.fillStyle = th.flowers[i % th.flowers.length]; g.fill(); ci(f.x, f.y, 1.4); g.fillStyle = '#FFB000'; g.fill(); });
+    for (const [lw, col] of [[78, th.path[0]], [64, th.path[1]]]) {
+      g.strokeStyle = col; g.lineWidth = lw;
+      for (const z of ZONES) { g.beginPath(); g.moveTo(PLAZA.x, PLAZA.y); g.lineTo(z.x + z.w / 2, z.y + z.h / 2); g.stroke(); }
+    }
+    ci(PLAZA.x, PLAZA.y, 180); g.fillStyle = th.path[0]; g.fill();
+    ci(PLAZA.x, PLAZA.y, 170); g.fillStyle = th.path[1]; g.fill();
+    g.strokeStyle = '#EAD7A6'; g.lineWidth = 3; ci(PLAZA.x, PLAZA.y, 120); g.stroke(); ci(PLAZA.x, PLAZA.y, 150); g.stroke();
+    for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; ci(PLAZA.x + Math.cos(a) * 135, PLAZA.y + Math.sin(a) * 135, 4); g.fillStyle = '#EAD7A6'; g.fill(); }
+    ground = { key, c };
+    return c;
+  }
   function drawWorld(tm) {
     const th = theme();
-    ctx.fillStyle = th.grass; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
-    ctx.strokeStyle = th.tuft; ctx.lineWidth = 2; ctx.lineCap = 'round';
-    for (const g of TUFTS) { ctx.beginPath(); ctx.moveTo(g.x - 4, g.y - 6); ctx.lineTo(g.x, g.y); ctx.lineTo(g.x + 4, g.y - 6); ctx.stroke(); }
-    FLOWERS.forEach((f, i) => { circ(f.x, f.y, 3.5); ctx.fillStyle = th.flowers[i % th.flowers.length]; ctx.fill(); circ(f.x, f.y, 1.4); ctx.fillStyle = '#FFB000'; ctx.fill(); });
-    for (const [lw, c] of [[78, th.path[0]], [64, th.path[1]]]) {
-      ctx.strokeStyle = c; ctx.lineWidth = lw;
-      for (const z of ZONES) { ctx.beginPath(); ctx.moveTo(PLAZA.x, PLAZA.y); ctx.lineTo(z.x + z.w / 2, z.y + z.h / 2); ctx.stroke(); }
-    }
-    circ(PLAZA.x, PLAZA.y, 180); ctx.fillStyle = th.path[0]; ctx.fill();
-    circ(PLAZA.x, PLAZA.y, 170); ctx.fillStyle = th.path[1]; ctx.fill();
-    ctx.strokeStyle = '#EAD7A6'; ctx.lineWidth = 3; circ(PLAZA.x, PLAZA.y, 120); ctx.stroke(); circ(PLAZA.x, PLAZA.y, 150); ctx.stroke();
-    for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; circ(PLAZA.x + Math.cos(a) * 135, PLAZA.y + Math.sin(a) * 135, 4); ctx.fillStyle = '#EAD7A6'; ctx.fill(); }
+    ctx.drawImage(groundLayer(th), 0, 0, WORLD.w, WORLD.h);
+    ctx.lineCap = 'round';
     for (const z of ZONES) drawRoom(z, tm);
     const fx = PLAZA.x, fy = PLAZA.y - 20;
     ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(fx, fy + 8, 64, 22, 0, 0, Math.PI * 2); ctx.fill();
@@ -768,12 +832,12 @@
     txt(name, p.x, p.y + 16, 12, '#3A2E3F', 700);
   }
 
-  let lastT = performance.now(), lastSent = 0, dirty = false, currentZone = null;
+  let lastT = performance.now(), lastSent = 0, dirty = false, currentZone = null, moveBusy = false;
   function loop(tm) {
     const dt = Math.min(0.05, (tm - lastT) / 1000);
     lastT = tm;
     update(dt, tm);
-    render(tm, dt);
+    if (!(window.innerWidth <= 640 && $('#panel').classList.contains('game-full'))) render(tm, dt);
     requestAnimationFrame(loop);
   }
   function update(dt, tm) {
@@ -800,7 +864,8 @@
         me.y = clamp(me.y + (dy / len) * step, 40, WORLD.h - 10);
         me.walking = true; me.phase += dt * 13; dirty = true;
       } else me.walking = false;
-      if (dirty && tm - lastSent > 110) { lastSent = tm; dirty = false; api('POST', '/api/move', { x: me.x, y: me.y }).catch(() => {}); }
+      // one position request at a time, so slow connections don't pile up requests
+      if (dirty && !moveBusy && tm - lastSent > 120) { lastSent = tm; dirty = false; moveBusy = true; api('POST', '/api/move', { x: Math.round(me.x), y: Math.round(me.y) }).catch(() => {}).finally(() => { moveBusy = false; }); }
       const z = zoneAt(me.x, me.y);
       if (z !== currentZone) {
         currentZone = z;
@@ -814,7 +879,7 @@
       const dx = p.tx - p.x, dy = p.ty - p.y;
       const d = Math.hypot(dx, dy);
       if (d > 500) { p.x = p.tx; p.y = p.ty; p.walking = false; }
-      else if (d > 1.5) { const step = Math.min(d, Math.max(240, d * 4) * dt); p.x += (dx / d) * step; p.y += (dy / d) * step; p.walking = true; p.phase += dt * 13; }
+      else if (d > 1.5) { const step = Math.min(d, Math.max(p.speed || 240, d * 2.5) * dt); p.x += (dx / d) * step; p.y += (dy / d) * step; p.walking = true; p.phase += dt * 13; }
       else p.walking = false;
     }
   }
@@ -837,7 +902,8 @@
       ctx.strokeStyle = `rgba(255,122,156,${1 - k})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.ellipse(state.target.x, state.target.y, 8 + k * 14, (8 + k * 14) * 0.4, 0, 0, Math.PI * 2); ctx.stroke();
     }
-    const list = [...state.players.values()].sort((a, b) => a.y - b.y);
+    const x0 = view.camX - 120, x1 = view.camX + vw + 120, y0 = view.camY - 60, y1 = view.camY + vh + 160;
+    const list = [...state.players.values()].filter((p) => p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1).sort((a, b) => a.y - b.y);
     for (const p of list) { Avatar.draw(ctx, p.avatar, p.x, p.y, { walking: p.walking, phase: p.phase, idle: tm / 1000 + p.seed }); drawTag(p, p.id === state.meId); }
     for (const p of list) { drawEmote(p, tm); drawBubble(p, tm); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -869,6 +935,7 @@
   const tabs = { games: 'quiz', rank: 'points', chat: 'all', me: 'room' };
   function openPanel(name) {
     if (currentPanel === name) { closePanel(); return; }
+    liveQuit();
     stopGame(); stopPanelAnim();
     currentPanel = name;
     $('#panel').classList.remove('hidden');
@@ -877,6 +944,7 @@
     renderPanel();
   }
   function closePanel() {
+    liveQuit();
     stopGame(); stopPanelAnim(); setGameFull(false);
     currentPanel = null;
     $('#panel').classList.add('hidden');
@@ -1177,22 +1245,22 @@
 
   // ---------- casual games
   let gameRunning = false, gameStop = null;
-  function stopGame() { if (gameStop) gameStop(); gameStop = null; gameRunning = false; }
+  function stopGame() { if (gameStop) gameStop(); gameStop = null; gameRunning = false; setTimeout(flushContent, 500); }
   const GAME_LIST = ['stars', 'memory', 'whack', 'caterpillar', 'slice'];
   const GAME_ICON = { stars: '⭐', memory: '🃏', whack: '🔨', caterpillar: '🐛', slice: '🍉', quiz: '❓' };
   const gameName = (g) => `${GAME_ICON[g] || ''} ${t('game.' + g)}`;
   const newSeed = () => Math.floor(Math.random() * 2147483646) + 1;
   // Plays one round in `box`; calls onEnd(score). Returns nothing; sets gameStop.
-  function runGame(box, game, seed, onEnd) {
+  function runGame(box, game, seed, onEnd, onScore) {
     stopGame();
     box.replaceChildren();
     gameRunning = true;
-    const end = (score) => { gameRunning = false; gameStop = null; onEnd(score); };
+    const end = (score) => { gameRunning = false; gameStop = null; onEnd(score); setTimeout(flushContent, 1500); };
     if (game === 'stars') {
       const canvas = el('canvas', { id: 'gameCanvas' });
       box.append(canvas);
-      requestAnimationFrame(() => { gameStop = starCatch(canvas, end, MiniGames.rng(seed)); });
-    } else gameStop = MiniGames[game](box, { seed, onEnd: end, t });
+      requestAnimationFrame(() => { gameStop = starCatch(canvas, end, MiniGames.rng(seed), onScore); });
+    } else gameStop = MiniGames[game](box, { seed, onEnd: end, t, onScore });
   }
   let miniView = null; // which game is open in the Mini games tab
   function renderMini(c) {
@@ -1241,8 +1309,9 @@
     g.fillText(t('mini.how'), w / 2, h / 2 + 6);
     if (state.me) Avatar.draw(g, state.me.avatar, w / 2, h - 14, { scale: 0.85 });
   }
-  function starCatch(canvas, onEnd, rand = Math.random) {
+  function starCatch(canvas, onEnd, rand = Math.random, onScore) {
     const DUR = 30;
+    let lastRep = 0;
     let px = 170, score = 0, items = [], fx = [], running = true, spawn = 0, raf = 0;
     const t0 = performance.now();
     let last = t0;
@@ -1275,6 +1344,7 @@
         items.push({ x: 20 + rand() * (w - 40), y: -20, vy: 130 + el2 * 7 + rand() * 70, k: r < 0.16 ? 'bomb' : r < 0.27 ? 'gold' : 'star' });
       }
       for (const it of items) it.y += it.vy * dt;
+      if (onScore && score !== lastRep) { lastRep = score; onScore(score); }
       items = items.filter((it) => {
         if (it.y > h - 78 && it.y < h - 40 && Math.abs(it.x - px) < 34) {
           const d = it.k === 'star' ? 1 : it.k === 'gold' ? 3 : -3;
@@ -1309,7 +1379,7 @@
   }
 
   // ---------- quiz duel (5 questions, 10 s each; the server checks the answers)
-  function runQuizDuel(box, questions, onEnd) {
+  function runQuizDuel(box, questions, onEnd, onAnswer) {
     stopGame();
     gameRunning = true;
     const answers = [];
@@ -1317,23 +1387,137 @@
     const bar = el('div', {});
     const show = () => {
       if (stopped) return;
-      if (i >= questions.length) { gameRunning = false; gameStop = null; box.replaceChildren(el('div', { class: 'game-idle' }, '✅')); onEnd(answers); return; }
+      if (i >= questions.length) { gameRunning = false; gameStop = null; box.replaceChildren(el('div', { class: 'game-idle' }, '✅')); onEnd(answers); setTimeout(flushContent, 1500); return; }
       const q = questions[i], t0 = performance.now();
       let picked = false;
       const opts = el('div', { class: 'opts' }, q.options.map((o, k) => el('button', { onclick: () => {
         if (picked) return; picked = true; clearInterval(timer);
         answers[i] = { choice: k, ms: Math.round(performance.now() - t0) };
+        if (onAnswer) onAnswer(answers.slice());
         i++; setTimeout(show, 250);
       } }, optLabel(q.options, q.optionsEn, k))));
       box.replaceChildren(el('div', { class: 'muted' }, `${i + 1} / ${questions.length}`), bi('h3', q.question, q.questionEn), el('div', { class: 'live-timer' }, bar), opts);
       timer = setInterval(() => {
         const left = 10000 - (performance.now() - t0);
         bar.style.width = clamp(left / 100, 0, 100) + '%';
-        if (left <= 0 && !picked) { picked = true; clearInterval(timer); answers[i] = { choice: -1, ms: 10000 }; i++; show(); }
+        if (left <= 0 && !picked) { picked = true; clearInterval(timer); answers[i] = { choice: -1, ms: 10000 }; if (onAnswer) onAnswer(answers.slice()); i++; show(); }
       }, 100);
     };
     gameStop = () => { stopped = true; clearInterval(timer); gameRunning = false; };
     show();
+  }
+
+  // ---------- live PK (both play at the same time)
+  let liveRoom = null, liveWait = null, liveIncoming = null;
+  const LIVE_EMOTES = ['😆', '🔥', '😱', '👍', '💪', '😭'];
+  function countdownModal(node, secs, onTimeout) {
+    const sec = el('b', {}, String(secs));
+    let left = secs;
+    const iv = setInterval(() => { left--; sec.textContent = String(Math.max(0, left)); if (left <= 0) { clearInterval(iv); if (onTimeout) onTimeout(); } }, 1000);
+    return { sec, stop: () => clearInterval(iv) };
+  }
+  async function liveInvite(to, game) {
+    try {
+      const { room } = await api('POST', '/api/pk/live/invite', { to, game });
+      const cd = countdownModal(null, 30);
+      liveWait = { id: room.id, stop: cd.stop };
+      openModal(el('div', { class: 'pk-invite' },
+        el('div', { class: 'pk-inv-bolt' }, '⚡'),
+        el('img', { class: 'pk-inv-av', src: Avatar.thumb(room.toAvatar || {}, 72), alt: '' }),
+        el('h3', {}, t('pk.inviting', { name: room.toName })),
+        el('p', {}, gameName(room.game)),
+        el('p', { class: 'muted' }, t('pk.inviteWait'), ' ', cd.sec, 's'),
+        el('div', { class: 'dlg-acts' }, el('button', { class: 'btn ghost', onclick: () => { cd.stop(); liveWait = null; closeModal(); api('POST', '/api/pk/live/cancel', { id: room.id }).catch(() => {}); } }, t('pk.cancel')))));
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+  function onLiveInvite(room) {
+    const decline = () => { cd.stop(); liveIncoming = null; closeModal(); api('POST', '/api/pk/live/cancel', { id: room.id }).catch(() => {}); };
+    const cd = countdownModal(null, 30, () => { if (liveIncoming && liveIncoming.id === room.id) { liveIncoming = null; closeModal(); } });
+    liveIncoming = { id: room.id, stop: cd.stop };
+    notify(t('pk.liveInvite', { name: room.fromName }));
+    openModal(el('div', { class: 'pk-invite' },
+      el('div', { class: 'pk-inv-bolt' }, '⚡'),
+      el('img', { class: 'pk-inv-av', src: Avatar.thumb(room.fromAvatar || {}, 72), alt: '' }),
+      el('h3', {}, t('pk.liveInvite', { name: room.fromName })),
+      el('p', {}, gameName(room.game)),
+      el('p', { class: 'muted' }, cd.sec, 's'),
+      el('div', { class: 'dlg-acts' },
+        el('button', { class: 'btn ghost', onclick: decline }, t('pk.decline')),
+        el('button', { class: 'btn primary', onclick: async () => { cd.stop(); liveIncoming = null; closeModal(); try { await api('POST', '/api/pk/live/accept', { id: room.id }); } catch (e) { toast(e.message, 'bad'); } } }, t('pk.accept')))));
+  }
+  function popLive(box, text, big) {
+    const s = el('span', { class: 'pk-pop' + (big ? ' big' : '') }, text);
+    box.append(s);
+    setTimeout(() => s.remove(), 1300);
+  }
+  function liveSide(av, name, cls) {
+    const sc = el('b', { class: 'pk-l-score' }, '0'), fill = el('i'), mark = el('span', { class: 'pk-l-done hidden' }, ' ✅'), pop = el('div', { class: 'pk-l-pops' });
+    const node = el('div', { class: 'pk-l-side ' + cls },
+      el('div', { class: 'pk-l-av' }, el('img', { src: Avatar.thumb(av || {}, 56), alt: '' }), pop),
+      el('div', { class: 'pk-l-name' }, name, mark), sc, el('div', { class: 'pk-l-bar' }, fill));
+    return { node, sc, fill, mark, pop };
+  }
+  function liveShow(L) {
+    const max = Math.max(L.my, L.opp, 1);
+    L.meSide.sc.textContent = L.my; L.oppSide.sc.textContent = L.opp;
+    L.meSide.fill.style.width = (L.my / max) * 100 + '%'; L.oppSide.fill.style.width = (L.opp / max) * 100 + '%';
+    L.meSide.node.classList.toggle('lead', L.my > L.opp); L.oppSide.node.classList.toggle('lead', L.opp > L.my);
+  }
+  function onLiveStart(room) {
+    if (liveWait && liveWait.id === room.id) { liveWait.stop(); liveWait = null; closeModal(); }
+    if (liveRoom) return;
+    const meFrom = room.from === state.meId;
+    if (currentPanel !== 'games') openPanel('games');
+    stopGame();
+    const L = liveRoom = { room, oppName: meFrom ? room.toName : room.fromName, my: 0, opp: 0, oppFinal: false, myFinal: false, sending: false, pending: null };
+    L.meSide = liveSide(state.me.avatar, t('pk.you'), 'me');
+    L.oppSide = liveSide(meFrom ? room.toAvatar : room.fromAvatar, L.oppName, 'opp');
+    L.box = el('div', { class: 'game-stage gs-' + room.game });
+    const cd = el('div', { class: 'pk-countdown' });
+    setGameFull(true);
+    $('#panelBody').replaceChildren(el('div', { class: 'game-box pk-live' },
+      el('div', { class: 'pk-l-top' }, L.meSide.node, el('div', { class: 'pk-l-vs' }, 'VS', el('small', {}, gameName(room.game))), L.oppSide.node),
+      el('div', { class: 'pk-l-stage' }, L.box, cd),
+      el('div', { class: 'pk-l-emotes' }, LIVE_EMOTES.map((e) => el('button', { type: 'button', onclick: () => { popLive(L.meSide.pop, e, true); api('POST', '/api/pk/live/emote', { id: room.id, e }).catch(() => {}); } }, e)))));
+    L.box.append(el('div', { class: 'game-idle' }, GAME_ICON[room.game]));
+    const startIn = room.startAt - room.serverNow, t0 = performance.now();
+    const tick = () => {
+      if (liveRoom !== L) return;
+      const left = startIn - (performance.now() - t0);
+      if (left > 0) { cd.textContent = String(Math.ceil(left / 1000)); setTimeout(tick, 100); return; }
+      cd.textContent = t('pk.go'); cd.classList.add('go');
+      setTimeout(() => cd.classList.add('hidden'), 700);
+      if (room.game === 'quiz') runQuizDuel(L.box, room.quiz || [], (answers) => liveSend(L, { answers }, true), (answers) => liveSend(L, { answers }, false));
+      else runGame(L.box, room.game, room.seed, (score) => { if (L.myFinal) return; L.my = score; liveShow(L); liveSend(L, { score }, true); }, (score) => { if (L.myFinal) return; L.my = score; liveShow(L); liveSend(L, { score }, false); });
+    };
+    tick();
+  }
+  function liveSend(L, payload, final, retry = 1) {
+    if (liveRoom !== L) return;
+    if (final) { L.myFinal = true; L.pending = null; }
+    else if (L.myFinal) return;
+    else if (L.sending || Date.now() - (L.lastSend || 0) < 300) { // at most ~3 updates a second
+      L.pending = payload;
+      if (!L.sending && !L.flushT) L.flushT = setTimeout(() => { L.flushT = 0; if (L.pending && !L.myFinal) { const p = L.pending; L.pending = null; liveSend(L, p, false); } }, 300 - (Date.now() - (L.lastSend || 0)));
+      return;
+    }
+    L.lastSend = Date.now();
+    if (!final) L.sending = true;
+    api('POST', '/api/pk/live/score', { id: L.room.id, ...payload, final })
+      .then((r) => { if (r && L.room.game === 'quiz') { L.my = r.score; liveShow(L); } })
+      .catch(() => { if (final && retry > 0) setTimeout(() => liveSend(L, payload, true, retry - 1), 1000); })
+      .finally(() => {
+        if (final) return;
+        L.sending = false;
+        if (L.pending && !L.myFinal) { const p = L.pending; L.pending = null; setTimeout(() => liveSend(L, p, false), 250); }
+      });
+    if (final && !L.oppFinal) L.box.append(el('div', { class: 'pk-l-wait' }, t('pk.waitOpp', { name: L.oppName })));
+  }
+  function liveQuit() {
+    if (!liveRoom) return;
+    const id = liveRoom.room.id;
+    liveRoom = null;
+    api('POST', '/api/pk/live/cancel', { id }).catch(() => {});
   }
 
   // ---------- PK
@@ -1371,15 +1555,21 @@
   }
   function renderPK(c) {
     const pk = c.pk || { incoming: [], outgoing: [], history: [], record: { w: 0, l: 0, t: 0 } };
-    const members = c.members || [];
+    const members = [...(c.members || [])];
     const onlineIds = new Set(state.players.keys());
+    for (const p of state.players.values()) if (p.id !== state.meId && !members.some((m) => m.id === p.id)) members.push({ id: p.id, nickname: p.nickname, avatar: p.avatar });
     const sorted = [...members].sort((a, b) => (onlineIds.has(b.id) - onlineIds.has(a.id)) || a.nickname.localeCompare(b.nickname));
     if (pkDraft.to && !members.some((m) => m.id === pkDraft.to)) pkDraft.to = '';
     const who = el('select', { class: 'inp' }, el('option', { value: '' }, t('pk.pickWho')), sorted.map((m) => el('option', { value: m.id, selected: m.id === pkDraft.to }, (onlineIds.has(m.id) ? '🟢 ' : '') + m.nickname)));
     const game = el('select', { class: 'inp' }, [...GAME_LIST, 'quiz'].map((g) => el('option', { value: g, selected: g === pkDraft.game }, gameName(g))));
     who.onchange = () => { pkDraft.to = who.value; };
     game.onchange = () => { pkDraft.game = game.value; };
-    const startBtn = el('button', { class: 'btn primary', onclick: async () => {
+    const liveBtn = el('button', { class: 'btn primary', onclick: () => {
+      if (!who.value) return toast(t('pk.pickWho'), 'bad');
+      if (!state.players.has(who.value)) return toast(t('err.pk_offline', { name: (members.find((m) => m.id === who.value) || {}).nickname || '' }), 'info', 6000);
+      liveInvite(who.value, game.value);
+    } }, t('pk.live'));
+    const startBtn = el('button', { class: 'btn', onclick: async () => {
       if (!who.value) return toast(t('pk.pickWho'), 'bad');
       try {
         const r = await api('POST', '/api/pk/create', { to: who.value, game: game.value });
@@ -1403,10 +1593,12 @@
         el('div', {}, el('b', {}, pk.record.w), t('pk.wins')), el('div', {}, el('b', {}, pk.record.l), t('pk.losses')), el('div', {}, el('b', {}, pk.record.t), t('pk.ties'))),
       pk.incoming.length ? el('div', { class: 'section-t' }, t('pk.incoming', { n: pk.incoming.length })) : null,
       pk.incoming.map((p) => row(p, 'in')),
-      el('div', { class: 'card' }, el('h3', {}, t('pk.newTitle')), el('p', { class: 'muted', style: 'margin:0 0 6px' }, t('pk.newHint')),
+      el('div', { class: 'card' }, el('h3', {}, t('pk.newTitle')),
         el('label', { class: 'field', style: 'margin:6px 0' }, el('span', {}, t('pk.opponent')), who),
         el('label', { class: 'field', style: 'margin:6px 0' }, el('span', {}, t('pk.game')), game),
-        startBtn),
+        el('div', { class: 'pk-btns' }, liveBtn, startBtn),
+        el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:12px' }, '⚡ ', t('pk.liveHint')),
+        el('p', { class: 'muted', style: 'margin:4px 0 0;font-size:12px' }, '📨 ', t('pk.newHint'))),
       pk.outgoing.length ? el('div', { class: 'section-t' }, t('pk.outgoing', { n: pk.outgoing.length })) : null,
       pk.outgoing.map((p) => row(p, 'out')),
       pk.history.length ? el('div', { class: 'section-t' }, t('pk.history')) : null,

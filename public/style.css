@@ -402,3 +402,46 @@ select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; bo
   .panel.game-full .gs-quiz { max-width: 100%; }
   body:has(.panel.game-full) #testBanner { display: none; }
 }
+
+/* ---------- live PK ---------- */
+.pk-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.pk-btns .btn { flex: 1; min-width: 130px; }
+.pk-invite { text-align: center; }
+.pk-invite h3 { margin: 6px 0 2px; }
+.pk-invite p { margin: 4px 0; }
+.pk-invite .dlg-acts { justify-content: center; }
+.pk-inv-bolt { font-size: 40px; animation: bell 1.2s ease-in-out infinite; }
+.pk-inv-av { width: 72px; height: 72px; border-radius: 22px; background: #DDF4FF; }
+.pk-live { gap: 8px; }
+.pk-l-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; width: 100%; max-width: 360px; }
+.pk-l-side { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 6px; align-items: center; background: #fff; border-radius: 14px; padding: 6px 8px; box-shadow: 0 2px 0 rgba(58,46,63,.06); transition: box-shadow .2s; }
+.pk-l-side.opp { grid-template-columns: 1fr auto; text-align: right; }
+.pk-l-side.opp .pk-l-av { grid-column: 2; grid-row: 1 / 4; }
+.pk-l-side.me .pk-l-av { grid-column: 1; grid-row: 1 / 4; }
+.pk-l-side.lead { box-shadow: 0 0 0 2px #FFD43B, 0 2px 0 rgba(58,46,63,.06); }
+.pk-l-av { position: relative; width: 44px; height: 44px; }
+.pk-l-av img { width: 44px; height: 44px; border-radius: 14px; background: #DDF4FF; display: block; }
+.pk-l-name { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-l-score { font-size: 22px; line-height: 1.1; }
+.pk-l-bar { height: 6px; border-radius: 3px; background: #F2E8DA; overflow: hidden; }
+.pk-l-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--primary); transition: width .3s; }
+.pk-l-side.opp .pk-l-bar i { background: #6D8BFF; margin-left: auto; }
+.pk-l-vs { text-align: center; font-weight: 900; color: var(--primary); font-size: 18px; line-height: 1; }
+.pk-l-vs small { display: block; font-size: 10px; color: var(--muted); font-weight: 700; margin-top: 3px; white-space: nowrap; }
+.pk-l-pops { position: absolute; left: 50%; top: 0; width: 0; height: 0; pointer-events: none; }
+.pk-pop { position: absolute; left: 0; top: 0; transform: translate(-50%, 0); font-weight: 900; color: #2FAE5A; font-size: 15px; white-space: nowrap; animation: pkpop 1.3s ease-out forwards; }
+.pk-pop.big { font-size: 30px; }
+@keyframes pkpop { 0% { opacity: 0; transform: translate(-50%, 6px) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, -40px) scale(1); } }
+.pk-l-stage { position: relative; width: 100%; display: flex; justify-content: center; }
+.pk-countdown { position: absolute; inset: 0; display: grid; place-items: center; font-size: 96px; font-weight: 900; color: #fff; text-shadow: 0 4px 0 var(--primary-d), 0 8px 30px rgba(0,0,0,.3); pointer-events: none; }
+.pk-countdown.go { font-size: 64px; }
+.pk-l-wait { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); background: rgba(58,46,63,.85); color: #fff; padding: 10px 16px; border-radius: 14px; font-weight: 700; white-space: nowrap; }
+.pk-live .game-stage { position: relative; }
+.pk-l-emotes { display: flex; gap: 6px; justify-content: center; }
+.pk-l-emotes button { border: 0; background: #fff; border-radius: 12px; font-size: 22px; width: 44px; height: 40px; box-shadow: 0 2px 0 rgba(0,0,0,.08); touch-action: manipulation; }
+@media (max-width: 640px) {
+  .panel.game-full .pk-live .gs-slice, .panel.game-full .pk-live .gs-stars { max-width: min(340px, calc((100vh - 270px) * 34 / 42)); max-width: min(340px, calc((100dvh - 270px) * 34 / 42)); }
+  .panel.game-full .pk-live .gs-memory { max-width: min(340px, calc(100vh - 290px)); max-width: min(340px, calc(100dvh - 290px)); }
+  .panel.game-full .pk-live .gs-whack { max-width: min(340px, calc(100vh - 300px)); max-width: min(340px, calc(100dvh - 300px)); }
+  .panel.game-full .pk-live .gs-caterpillar { max-width: min(340px, calc(100vh - 390px)); max-width: min(340px, calc(100dvh - 390px)); }
+}

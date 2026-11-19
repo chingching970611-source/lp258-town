@@ -6,23 +6,25 @@
     return () => { a = (a + 0x6D2B79F5) >>> 0; let x = Math.imul(a ^ (a >>> 15), 1 | a); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
   }
   function h(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  function hud(container, t) {
+  function hud(container, t, onScore) {
     const bar = h('div', 'mg-hud');
-    const score = h('b', '', '0'), time = h('b', '', '');
-    bar.append(h('span', '', '⭐ '), score, h('span', 'mg-sp'), h('span', '', '⏱ '), time);
+    const scoreEl = h('b', '', '0'), time = h('b', '', '');
+    bar.append(h('span', '', '⭐ '), scoreEl, h('span', 'mg-sp'), h('span', '', '⏱ '), time);
     container.append(bar);
+    // setting score.textContent also tells the caller (live PK shows it to the opponent)
+    const score = { get textContent() { return scoreEl.textContent; }, set textContent(v) { scoreEl.textContent = v; if (onScore) onScore(Number(v) || 0); } };
     return { score, time };
   }
 
   // ---------------------------------------------------------------- 🃏 Memory: match the pairs
-  function memory(container, { seed, onEnd, t }) {
+  function memory(container, { seed, onEnd, t, onScore }) {
     const R = rng(seed);
     const pool = ['🍓', '🍋', '🍇', '🍑', '🥝', '🍒', '🍉', '🍍', '🥥', '🍌', '🍄', '🌸'];
     for (let i = pool.length - 1; i > 0; i--) { const k = Math.floor(R() * (i + 1)); [pool[i], pool[k]] = [pool[k], pool[i]]; }
     const cards = [...pool.slice(0, 8), ...pool.slice(0, 8)];
     for (let i = cards.length - 1; i > 0; i--) { const k = Math.floor(R() * (i + 1)); [cards[i], cards[k]] = [cards[k], cards[i]]; }
     const LIMIT = 90;
-    const ui = hud(container, t);
+    const ui = hud(container, t, onScore);
     const grid = h('div', 'mg-memory');
     container.append(grid);
     let open = [], matched = 0, misses = 0, busy = false, done = false;
@@ -60,7 +62,7 @@
   }
 
   // ---------------------------------------------------------------- 🔨 Whack: tap the critters, avoid bombs
-  function whack(container, { seed, onEnd }) {
+  function whack(container, { seed, onEnd, onScore }) {
     const R = rng(seed);
     const DUR = 30;
     // a fixed schedule of pop-ups from the seed, so both PK players see the same critters
@@ -71,7 +73,7 @@
       plan.push({ at, hole: Math.floor(R() * 9), kind: r < 0.14 ? 'bomb' : r < 0.26 ? 'gold' : 'mole', stay: 950 - 420 * p });
       at += 700 - 380 * p + R() * 160;
     }
-    const ui = hud(container);
+    const ui = hud(container, null, onScore);
     const grid = h('div', 'mg-whack');
     container.append(grid);
     const holes = Array.from({ length: 9 }, () => { const b = h('button', 'mg-hole'); b.type = 'button'; b.append(h('span', 'mg-critter')); grid.append(b); return b; });
@@ -109,10 +111,10 @@
   }
 
   // ---------------------------------------------------------------- 🐛 Caterpillar: eat leaves, don't bump into walls or yourself
-  function caterpillar(container, { seed, onEnd }) {
+  function caterpillar(container, { seed, onEnd, onScore }) {
     const R = rng(seed);
     const N = 15;
-    const ui = hud(container);
+    const ui = hud(container, null, onScore);
     ui.time.textContent = '—';
     const canvas = h('canvas', 'mg-cat');
     container.append(canvas);
@@ -177,7 +179,7 @@
   }
 
   // ---------------------------------------------------------------- 🍉 Slice: swipe through flying fruit, avoid bombs
-  function slice(container, { seed, onEnd }) {
+  function slice(container, { seed, onEnd, onScore }) {
     const R = rng(seed);
     const DUR = 30, G = 520; // gravity (px/s²) in a 340×420 design space
     const FRUITS = ['🍉', '🍊', '🍎', '🍍', '🥝', '🍑', '🍋', '🍇'];
@@ -191,7 +193,7 @@
       }
       at += 0.95 - p * 0.45 + R() * 0.35;
     }
-    const ui = hud(container);
+    const ui = hud(container, null, onScore);
     const canvas = h('canvas', 'mg-slice');
     container.append(canvas);
     let score = 0, idx = 0, done = false, raf = 0, combo = 0, comboT = 0;
@@ -201,6 +203,7 @@
     const toLocal = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * 340 / r.width, (e.clientY - r.top) * 420 / r.height]; };
     const segHit = (ax, ay, bx, by, cx, cy, rad) => { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy || 1; let u = ((cx - ax) * dx + (cy - ay) * dy) / l; u = Math.max(0, Math.min(1, u)); const px = ax + u * dx - cx, py = ay + u * dy - cy; return px * px + py * py <= rad * rad; };
     function cut(ax, ay, bx, by, now) {
+      if (done) return; // time is up: no more cutting
       for (let i = live.length - 1; i >= 0; i--) {
         const f = live[i];
         if (!segHit(ax, ay, bx, by, f.x, f.y, 24)) continue;

@@ -700,6 +700,14 @@ route('POST /api/pin', async (req, res, body) => {
   json(res, 200, { user: selfUser(u) });
 });
 
+const pendingMoves = new Map();
+setInterval(() => {
+  if (!pendingMoves.size) return;
+  const msg = `event: moves\ndata: ${JSON.stringify([...pendingMoves.values()])}\n\n`;
+  pendingMoves.clear();
+  for (const o of online.values()) for (const r of o.conns) { try { r.write(msg); } catch {} }
+}, 100);
+
 route('POST /api/move', async (req, res, body) => {
   const u = needUser(req);
   const o = online.get(u.id);
@@ -710,7 +718,7 @@ route('POST /api/move', async (req, res, body) => {
   o.lastMove = now();
   o.x = clamp(Math.round(x), 20, WORLD.w - 20);
   o.y = clamp(Math.round(y), 40, WORLD.h - 10);
-  broadcast('move', { id: u.id, x: o.x, y: o.y }, u.id);
+  pendingMoves.set(u.id, [u.id, o.x, o.y]);
   json(res, 200, { ok: true });
 });
 
@@ -977,6 +985,105 @@ route('POST /api/pk/score', async (req, res, body) => {
   }
   throw httpErr(409, 'pk_closed');
 });
+// Live PK: both players play the same round at the same time and see each other's score as they go.
+const LIVE_MAX_S = { stars: 32, whack: 32, slice: 32, memory: 92, caterpillar: 180, quiz: 60 };
+const LIVE_EMOTES = ['😆', '🔥', '😱', '👍', '💪', '😭'];
+const liveRooms = new Map();
+const liveOther = (r, id) => (r.from === id ? r.to : r.from);
+const liveOf = (id) => [...liveRooms.values()].find((r) => r.from === id || r.to === id);
+function liveOut(r) {
+  return { id: r.id, game: r.game, seed: r.seed, status: r.status, from: r.from, to: r.to, fromName: nameOf(r.from), toName: nameOf(r.to),
+    fromAvatar: avatarOf(r.from), toAvatar: avatarOf(r.to), startAt: r.startAt || null, serverNow: now(), quiz: r.game === 'quiz' ? pkQuiz(r) : undefined };
+}
+function liveFinish(r) {
+  if (r.status === 'done') return;
+  r.status = 'done';
+  liveRooms.delete(r.id);
+  const p = { id: r.id, from: r.from, to: r.to, game: r.game, seed: r.seed, live: true, status: 'done', createdAt: r.at, doneAt: now(),
+    fromScore: r.scores[r.from] || 0, toScore: r.scores[r.to] || 0 };
+  p.winner = p.toScore > p.fromScore ? p.to : p.toScore < p.fromScore ? p.from : 'tie';
+  db.pk.push(p);
+  if (p.winner === 'tie') { for (const id of [p.from, p.to]) if (db.users[id]) award(db.users[id], PK_TIE, null); systemMsg('sys.pkTie', { a: nameOf(p.from), b: nameOf(p.to), game: p.game }); }
+  else { const w = db.users[p.winner]; if (w) award(w, PK_WIN, null); systemMsg('sys.pkWin', { winner: nameOf(p.winner), loser: nameOf(liveOther(p, p.winner)), game: p.game, pts: PK_WIN }); }
+  save();
+  for (const id of [p.from, p.to]) { sendTo(id, 'pkLiveResult', pkOut(p, id)); sendTo(id, 'content', { col: 'pk' }); }
+}
+function liveCancel(r, reason, byId) {
+  liveRooms.delete(r.id);
+  for (const id of [r.from, r.to]) if (id !== byId) sendTo(id, 'pkLiveCancel', { id: r.id, reason, name: nameOf(byId || liveOther(r, id)) });
+}
+function liveLeave(id) { // called when a member goes offline
+  const r = liveOf(id);
+  if (!r) return;
+  if (r.status === 'inviting') liveCancel(r, 'cancelled', id);
+  else { r.final[id] = true; sendTo(liveOther(r, id), 'pkLiveScore', { id: r.id, uid: id, score: r.scores[id] || 0, final: true }); if (r.final[r.from] && r.final[r.to]) liveFinish(r); }
+}
+setInterval(() => {
+  const t = now();
+  for (const r of [...liveRooms.values()]) {
+    if (r.status === 'inviting' && t - r.at > 30000) liveCancel(r, 'timeout');
+    else if (r.status === 'playing' && t > r.startAt + (LIVE_MAX_S[r.game] || 60) * 1000 + 15000) liveFinish(r);
+  }
+}, 2000);
+
+route('POST /api/pk/live/invite', async (req, res, body) => {
+  const u = needUser(req);
+  const to = db.users[body.to];
+  if (!to || to.banned || to.id === u.id) throw httpErr(400, 'pk_bad_opponent');
+  if (!PK_GAMES.includes(body.game)) throw httpErr(400, 'bad_request');
+  if (!online.has(to.id)) throw httpErr(409, 'pk_offline', { name: to.nickname });
+  if (liveOf(u.id) || liveOf(to.id)) throw httpErr(409, 'pk_busy');
+  rate(rateBag(u.id), 'pklive', 3000);
+  const r = { id: uid(5), from: u.id, to: to.id, game: body.game, seed: crypto.randomInt(1, 2 ** 31 - 1), status: 'inviting', at: now(), scores: {}, final: {} };
+  if (r.game === 'quiz') {
+    if (db.quiz.length < 3) throw httpErr(409, 'pk_need_quiz');
+    const pool = [...db.quiz];
+    for (let i = pool.length - 1; i > 0; i--) { const k = crypto.randomInt(0, i + 1); [pool[i], pool[k]] = [pool[k], pool[i]]; }
+    r.quizIds = pool.slice(0, 5).map((q) => q.id);
+  }
+  liveRooms.set(r.id, r);
+  sendTo(to.id, 'pkLiveInvite', liveOut(r));
+  json(res, 200, { room: liveOut(r) });
+});
+route('POST /api/pk/live/accept', async (req, res, body) => {
+  const u = needUser(req);
+  const r = liveRooms.get(body.id);
+  if (!r || r.to !== u.id || r.status !== 'inviting') throw httpErr(409, 'pk_closed');
+  r.status = 'playing';
+  r.startAt = now() + 4000;
+  r.scores = { [r.from]: 0, [r.to]: 0 };
+  for (const id of [r.from, r.to]) sendTo(id, 'pkLiveStart', liveOut(r));
+  json(res, 200, { room: liveOut(r) });
+});
+route('POST /api/pk/live/cancel', async (req, res, body) => {
+  const u = needUser(req);
+  const r = liveRooms.get(body.id);
+  if (!r || (r.from !== u.id && r.to !== u.id)) return json(res, 200, { ok: true });
+  if (r.status === 'inviting') liveCancel(r, r.to === u.id ? 'declined' : 'cancelled', u.id);
+  else liveLeave(u.id); // leaving mid-game = stop with the score you have
+  json(res, 200, { ok: true });
+});
+route('POST /api/pk/live/score', async (req, res, body) => {
+  const u = needUser(req);
+  const r = liveRooms.get(body.id);
+  if (!r || r.status !== 'playing' || (r.from !== u.id && r.to !== u.id)) throw httpErr(409, 'pk_closed');
+  if (r.final[u.id]) return json(res, 200, { score: r.scores[u.id] });
+  const score = r.game === 'quiz' ? pkScoreQuiz(r, body.answers) : clamp(Math.floor(Number(body.score) || 0), 0, GAME_MAX[r.game]);
+  r.scores[u.id] = score;
+  if (body.final) r.final[u.id] = true;
+  sendTo(liveOther(r, u.id), 'pkLiveScore', { id: r.id, uid: u.id, score, final: !!body.final });
+  if (r.final[r.from] && r.final[r.to]) liveFinish(r);
+  json(res, 200, { score });
+});
+route('POST /api/pk/live/emote', async (req, res, body) => {
+  const u = needUser(req);
+  const r = liveRooms.get(body.id);
+  if (!r || (r.from !== u.id && r.to !== u.id) || !LIVE_EMOTES.includes(body.e)) throw httpErr(400, 'bad_request');
+  rate(rateBag(u.id), 'pkemote', 700);
+  sendTo(liveOther(r, u.id), 'pkLiveEmote', { id: r.id, uid: u.id, e: body.e });
+  json(res, 200, { ok: true });
+});
+
 route('POST /api/pk/decline', async (req, res, body) => {
   const u = needUser(req);
   const p = db.pk.find((x) => x.id === body.id);
@@ -1557,9 +1664,11 @@ function handleStream(req, res, url) {
       o.leaveTimer = setTimeout(() => {
         if (o.conns.size || online.get(u.id) !== o) return;
         online.delete(u.id);
+        pendingMoves.delete(u.id);
         u.lastSeen = now();
         save();
         broadcast('leave', { id: u.id });
+        liveLeave(u.id);
       }, 5000);
     }
   });
