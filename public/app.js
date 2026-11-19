@@ -58,6 +58,8 @@
     if (!m.key) return m.text || '';
     const p = { ...(m.params || {}) };
     if (m.key === 'sys.room') p.job = jobLabel(p.job) || p.job;
+    if (p.game) p.game = t('game.' + p.game);
+    if (p.result) p.result = t('pk.res.' + p.result);
     if (p.date) p.date = fmtDate(p.date);
     if (p.fee !== undefined) p.cur = cur();
     let s = t(m.key, p);
@@ -395,8 +397,8 @@
       if (currentPanel === 'rank') renderPanel();
     });
     on('content', () => { clearTimeout(contentTimer); contentTimer = setTimeout(loadContent, 300); });
-    on('announce', (a) => { state.announcements.push(a); renderTicker(); toast('📢 ' + a.text, 'info', 6000); });
-    on('announceUpdated', (a) => { const x = state.announcements.find((y) => y.id === a.id); if (x) x.text = a.text; renderTicker(); });
+    on('announce', (a) => { state.announcements.push(a); renderTicker(); toast('📢 ' + pickLang(a.text, a.textEn), 'info', 6000); });
+    on('announceUpdated', (a) => { const x = state.announcements.find((y) => y.id === a.id); if (x) { x.text = a.text; x.textEn = a.textEn; } renderTicker(); });
     on('announceRemoved', (d) => { state.announcements = state.announcements.filter((a) => a.id !== d.id); renderTicker(); });
     on('poke', (d) => { toast(t('toast.poke', { name: d.name }), 'info', 4500); logLine(el('div', { class: 'dm' }, '👋 ', t('log.poke', { name: d.name }))); });
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
@@ -417,6 +419,9 @@
   async function loadContent() {
     try {
       state.content = await api('GET', '/api/content');
+      const pkIn = (state.content.pk && state.content.pk.incoming.length) || 0;
+      const gb = document.querySelector('.nav button[data-panel=games]');
+      if (gb) { let b = gb.querySelector('.badge'); if (!b) { b = el('b', { class: 'badge' }); gb.append(b); } b.textContent = pkIn; b.classList.toggle('hidden', !pkIn); }
       if (state.content.settings) { state.settings = state.content.settings; updateSeasonUi(); }
       checkReminders();
       if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && gameRunning)) renderPanel();
@@ -434,25 +439,25 @@
     const tx = $('#tickerText');
     if (!list.length) { tx.textContent = t('ticker.default'); return; }
     tickerIdx = list.length - 1;
-    tx.textContent = list[tickerIdx].text;
+    tx.textContent = pickLang(list[tickerIdx].text, list[tickerIdx].textEn);
   }
   setInterval(() => {
     const list = state.announcements.slice(-5);
     if (list.length < 2) return;
     tickerIdx = (tickerIdx + 1) % list.length;
-    $('#tickerText').textContent = list[tickerIdx].text;
+    $('#tickerText').textContent = pickLang(list[tickerIdx].text, list[tickerIdx].textEn);
   }, 7000);
 
   // ============================================================ chat
   function addChat(m) {
     state.chat.push(m);
     if (state.chat.length > 200) state.chat.shift();
-    if (!m.system && !m.to) { const p = state.players.get(m.from); if (p) p.bubble = { text: m.text, t: performance.now() }; }
+    if (!m.system && !m.to) { const p = state.players.get(m.from); if (p) p.bubble = { text: m.text || '📷', t: performance.now() }; }
     if (currentPanel === 'chat') { const list = $('#msgList'); if (list && matchesChatFilter(m)) { list.append(msgEl(m)); scrollChat(); } }
     else if (m.system) logLine(el('div', { class: 'sys' }, msgText(m)));
-    else if (m.to) logLine(el('div', { class: 'dm' }, '🔒 ', el('b', {}, m.from === state.meId ? `→ ${m.toName}` : m.name), ': ', m.text));
-    else logLine(el('div', {}, el('b', {}, m.name), ': ', m.text));
-    if (m.to && m.from !== state.meId && currentPanel !== 'chat') toast(t('toast.dm', { name: m.name, text: m.text.slice(0, 40) }), 'info');
+    else if (m.to) logLine(el('div', { class: 'dm' }, '🔒 ', el('b', {}, m.from === state.meId ? `→ ${m.toName}` : m.name), ': ', m.image ? '📷 ' : '', m.text));
+    else logLine(el('div', {}, el('b', {}, m.name), ': ', m.image ? '📷 ' : '', m.text));
+    if (m.to && m.from !== state.meId && currentPanel !== 'chat') toast(t('toast.dm', { name: m.name, text: (m.image ? '📷 ' : '') + (m.text || '').slice(0, 40) }), 'info');
   }
   function logLine(node) {
     const log = $('#chatLog');
@@ -460,6 +465,28 @@
     while (log.children.length > 5) log.firstChild.remove();
     setTimeout(() => node.remove(), 9000);
   }
+  function openPhoto(src) {
+    openModal(el('div', { style: 'text-align:center' }, el('img', { src, alt: '', style: 'max-width:100%;max-height:70vh;border-radius:14px' }),
+      el('div', { style: 'margin-top:10px' }, el('button', { class: 'btn', onclick: closeModal }, t('close')))));
+  }
+  const photoInput = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
+  document.body.append(photoInput);
+  $('#photoBtn').onclick = () => photoInput.click();
+  photoInput.onchange = async () => {
+    const f = photoInput.files && photoInput.files[0];
+    photoInput.value = '';
+    if (!f) return;
+    const inp = $('#chatInput');
+    const text = inp.value.trim();
+    $('#photoBtn').disabled = true;
+    try {
+      const image = await shrinkImage(f, 1280, 0.8);
+      await api('POST', '/api/chat', { text, image, to: state.dm ? state.dm.id : undefined });
+      inp.value = '';
+      toast(t('chat.photoSent'), 'good', 2000);
+    } catch (e) { toast(e.message, 'bad'); }
+    $('#photoBtn').disabled = false;
+  };
   async function sendChat() {
     const inp = $('#chatInput');
     const text = inp.value.trim();
@@ -484,7 +511,10 @@
   $('#dmPill').onclick = () => setDm(null);
   const EMOTES = ['👋', '❤️', '😂', '👍', '🎉', '😮', '🔥', '🙏', '💃', '😴'];
   const pop = $('#emotePop');
-  for (const e of EMOTES) pop.append(el('button', { onclick: () => { sendEmote(e); pop.classList.add('hidden'); } }, e));
+  const EMOJI = ['😀', '😂', '🥹', '😍', '🥰', '😘', '😎', '🤩', '🥳', '😴', '🤔', '😅', '😭', '😡', '🙈', '🙏', '👍', '👏', '💪', '🤝', '❤️', '💖', '🔥', '✨', '🎉', '🎂', '🍰', '☕', '🧋', '🍜', '🍉', '🌸', '🌈', '⭐', '🏆', '📸', '🎵', '🐶', '🐱', '🐼'];
+  const insertEmoji = (e) => { const inp = $('#chatInput'); const at = inp.selectionStart ?? inp.value.length; inp.value = inp.value.slice(0, at) + e + inp.value.slice(inp.selectionEnd ?? at); inp.focus(); inp.selectionStart = inp.selectionEnd = at + e.length; };
+  pop.append(el('div', { class: 'pop-title' }, t('chat.emojiTitle')), el('div', { class: 'pop-grid' }, EMOJI.map((e) => el('button', { type: 'button', onclick: () => insertEmoji(e) }, e))),
+    el('div', { class: 'pop-title' }, t('chat.actionsTitle')), el('div', { class: 'pop-grid' }, EMOTES.map((e) => el('button', { type: 'button', onclick: () => { sendEmote(e); pop.classList.add('hidden'); } }, e))));
   $('#emoteToggle').onclick = () => pop.classList.toggle('hidden');
   async function sendEmote(e) { try { await api('POST', '/api/emote', { emoji: e }); } catch (err) { toast(err.message, 'bad'); } }
 
@@ -902,7 +932,9 @@
     const label = m.to ? (mine ? t('chat.dmTo', { name: m.toName }) : t('chat.dmFrom', { name: m.name })) : m.name;
     const node = el('div', { class: 'msg' + (mine ? ' mine' : '') + (m.to ? ' dm' : '') },
       p ? avatarImg(p.avatar, 34) : el('img', { alt: '', src: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==' }),
-      el('div', { class: 'bub' }, el('small', {}, `${label} · ${fmtTime(m.at)}`), m.text));
+      el('div', { class: 'bub' }, el('small', {}, `${label} · ${fmtTime(m.at)}`),
+        m.image ? el('img', { class: 'chat-photo', src: fileUrl(m.image), alt: '📷', loading: 'lazy', onclick: () => openPhoto(fileUrl(m.image)) }) : null,
+        m.text ? el('div', {}, m.text) : null));
     if (!mine && p) node.querySelector('img').onclick = () => openPlayerCard(p);
     return node;
   }
@@ -940,6 +972,7 @@
         el('button', { class: 'btn yellow', onclick: async () => { try { await api('POST', '/api/poke', { to: p.id }); toast(t('card.waved', { name: p.nickname }), 'good'); } catch (e) { toast(e.message, 'bad'); } } }, t('card.wave')),
         el('button', { class: 'btn blue', onclick: () => { closeModal(); setDm(p); } }, t('card.dm')),
         el('button', { class: 'btn green', onclick: () => openRoomView(p) }, t('card.room')),
+        el('button', { class: 'btn red', onclick: () => { closeModal(); pkDraft.to = p.id; tabs.games = 'pk'; miniView = null; if (currentPanel === 'games') renderPanel(); else openPanel('games'); } }, t('card.pk')),
         el('button', { class: 'btn', onclick: () => { closeModal(); state.target = { x: p.x + 40, y: p.y }; } }, t('card.walk'))),
       el('button', { class: 'btn ghost small', style: 'margin-top:12px', onclick: closeModal }, t('close')));
     openModal(card);
@@ -1042,9 +1075,19 @@
     return wrap;
   }
 
+  // ---------- two-language content: your language first, the other one small underneath
+  const pickLang = (zh, en) => (I18N.lang === 'en' && en ? en : zh || en || '');
+  const otherLang = (zh, en) => (en && zh && en !== zh ? (I18N.lang === 'en' ? zh : en) : '');
+  function bi(tag, zh, en, props) {
+    const sub = otherLang(zh, en);
+    return el(tag, props || {}, pickLang(zh, en), sub ? el('span', { class: 'bi-sub' }, sub) : null);
+  }
+  const optLabel = (opts, optsEn, i) => { const zh = opts[i], en = (optsEn || [])[i]; const sub = otherLang(zh, en); return [`${'ABCD'[i]}. ${pickLang(zh, en)}`, sub ? el('span', { class: 'bi-sub' }, sub) : null]; };
+
   // ---------- games
   function renderGames(c) {
-    const wrap = el('div', {}, tabBar('games', [['quiz', t('games.quiz')], ['riddle', t('games.riddle')], ['mini', t('games.mini')], ['lp', t('games.lp')]]));
+    const pkCount = (c.pk && c.pk.incoming.length) || 0;
+    const wrap = el('div', {}, tabBar('games', [['quiz', t('games.quiz')], ['riddle', t('games.riddle')], ['mini', t('games.mini')], ['pk', t('games.pk') + (pkCount ? ` (${pkCount})` : '')], ['lp', t('games.lp')]]));
     const tb = tabs.games;
     if (tb === 'quiz') {
       wrap.append(el('p', { class: 'muted' }, t('quiz.intro', { done: c.quiz.filter((q) => q.result).length, total: c.quiz.length })));
@@ -1055,6 +1098,7 @@
       if (!c.riddles.length) wrap.append(el('div', { class: 'empty' }, t('riddle.none')));
       for (const r of c.riddles) wrap.append(riddleCard(r));
     } else if (tb === 'mini') wrap.append(renderMini(c));
+    else if (tb === 'pk') wrap.append(renderPK(c));
     else wrap.append(renderLP(c));
     return wrap;
   }
@@ -1062,10 +1106,10 @@
     const card = el('div', { class: 'card' });
     const draw = () => {
       card.replaceChildren(
-        el('div', { class: 'card-top' }, el('h3', {}, q.question),
+        el('div', { class: 'card-top' }, bi('h3', q.question, q.questionEn),
           q.result ? el('span', { class: 'tag ' + (q.result === 'correct' ? 'g' : 'r') }, q.result === 'correct' ? t('quiz.right') : t('quiz.wrong')) : el('span', { class: 'tag y' }, `+${q.points}`)),
         el('div', { class: 'opts' }, q.options.map((o, i) => {
-          const b = el('button', { disabled: !!q.result }, `${'ABCD'[i]}. ${o}`);
+          const b = el('button', { disabled: !!q.result }, optLabel(q.options, q.optionsEn, i));
           if (q.result && i === q.answer) b.classList.add('right');
           if (q.picked === i && q.result === 'wrong') b.classList.add('wrong');
           b.onclick = async () => {
@@ -1086,7 +1130,7 @@
   function riddleCard(r) {
     const card = el('div', { class: 'card' });
     const input = el('input', { class: 'inp', placeholder: t('riddle.ph'), maxLength: 50 });
-    const hint = el('div', { class: 'muted hidden', style: 'margin-top:6px' }, '💡 ' + (r.hint || t('riddle.noHint')));
+    const hint = el('div', { class: 'muted hidden', style: 'margin-top:6px' }, '💡 ', r.hint || r.hintEn ? bi('span', r.hint, r.hintEn) : t('riddle.noHint'));
     const submit = async () => {
       if (!input.value.trim()) return;
       try {
@@ -1097,7 +1141,7 @@
     };
     input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) submit(); };
     card.append(
-      el('div', { class: 'card-top' }, el('h3', {}, r.question), r.solved ? el('span', { class: 'tag g' }, t('riddle.solved')) : el('span', { class: 'tag y' }, `+${r.points}`)),
+      el('div', { class: 'card-top' }, bi('h3', r.question, r.questionEn), r.solved ? el('span', { class: 'tag g' }, t('riddle.solved')) : el('span', { class: 'tag y' }, `+${r.points}`)),
       r.solved ? null : el('div', { class: 'row' }, input, el('button', { class: 'btn primary', onclick: submit }, t('riddle.go')),
         el('button', { class: 'btn ghost', onclick: () => hint.classList.toggle('hidden') }, '💡')),
       r.solved ? null : hint);
@@ -1113,8 +1157,8 @@
       const ta = el('textarea', { class: 'inp', rows: 2, maxLength: 600, placeholder: t('lp.ph') });
       const status = active ? (active.status === 'approved' ? el('span', { class: 'tag g' }, t('lp.done')) : el('span', { class: 'tag p' }, t('lp.pending'))) : el('span', { class: 'tag y' }, `+${ch.points}`);
       wrap.append(el('div', { class: 'card' },
-        el('div', { class: 'card-top' }, el('h3', {}, '🏅 ' + ch.title), status),
-        el('div', { class: 'muted', style: 'white-space:pre-wrap' }, ch.description),
+        el('div', { class: 'card-top' }, el('h3', {}, '🏅 ', bi('span', ch.title, ch.titleEn)), status),
+        bi('div', ch.description, ch.descriptionEn, { class: 'muted', style: 'white-space:pre-wrap' }),
         active ? el('div', { class: 'record' }, t('lp.yours') + active.text)
           : el('div', { style: 'margin-top:8px' },
             rejected ? el('div', { class: 'tag r', style: 'margin-bottom:6px' }, t('lp.rejected')) : null,
@@ -1128,30 +1172,62 @@
     return wrap;
   }
 
-  // ---------- mini game
+  // ---------- casual games
   let gameRunning = false, gameStop = null;
   function stopGame() { if (gameStop) gameStop(); gameStop = null; gameRunning = false; }
+  const GAME_LIST = ['stars', 'memory', 'whack', 'caterpillar', 'slice'];
+  const GAME_ICON = { stars: '⭐', memory: '🃏', whack: '🔨', caterpillar: '🐛', slice: '🍉', quiz: '❓' };
+  const gameName = (g) => `${GAME_ICON[g] || ''} ${t('game.' + g)}`;
+  const newSeed = () => Math.floor(Math.random() * 2147483646) + 1;
+  // Plays one round in `box`; calls onEnd(score). Returns nothing; sets gameStop.
+  function runGame(box, game, seed, onEnd) {
+    stopGame();
+    box.replaceChildren();
+    gameRunning = true;
+    const end = (score) => { gameRunning = false; gameStop = null; onEnd(score); };
+    if (game === 'stars') {
+      const canvas = el('canvas', { id: 'gameCanvas' });
+      box.append(canvas);
+      requestAnimationFrame(() => { gameStop = starCatch(canvas, end, MiniGames.rng(seed)); });
+    } else gameStop = MiniGames[game](box, { seed, onEnd: end, t });
+  }
+  let miniView = null; // which game is open in the Mini games tab
   function renderMini(c) {
-    const canvas = el('canvas', { id: 'gameCanvas' });
-    const best = el('b', {}, c.myBest || 0);
-    const btn = el('button', { class: 'btn primary big' }, t('mini.start'));
-    const box = el('div', { class: 'game-box' },
-      el('div', { class: 'muted', style: 'text-align:center' }, t('mini.intro')), canvas, el('div', {}, t('mini.best'), best, ' ⭐'), btn);
-    requestAnimationFrame(() => drawGameIdle(canvas));
-    btn.onclick = () => {
-      btn.disabled = true;
-      gameRunning = true;
-      gameStop = starCatch(canvas, async (score) => {
-        gameRunning = false; gameStop = null;
-        btn.disabled = false; btn.textContent = t('mini.again');
+    const games = c.games || {};
+    if (!miniView) {
+      return el('div', {},
+        el('p', { class: 'muted' }, t('mini.pick')),
+        el('div', { class: 'game-grid' }, GAME_LIST.map((g) => el('button', { class: 'game-tile', onclick: () => { miniView = g; renderPanel(); } },
+          el('div', { class: 'gt-icon' }, GAME_ICON[g]),
+          el('b', {}, t('game.' + g)),
+          el('div', { class: 'muted' }, t('game.' + g + '.how')),
+          el('div', { class: 'tag y' }, t('mini.best') + ((games[g] && games[g].best) || 0))))));
+    }
+    const g = miniView;
+    const box = el('div', { class: 'game-stage' });
+    const best = el('b', {}, (games[g] && games[g].best) || 0);
+    const startBtn = el('button', { class: 'btn primary big' }, t('mini.start'));
+    const wrap = el('div', { class: 'game-box' },
+      el('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' },
+        el('button', { class: 'btn ghost small', onclick: () => { stopGame(); miniView = null; renderPanel(); } }, t('mini.back')),
+        el('b', {}, gameName(g)), el('span', { class: 'tag y' }, t('mini.best'), best)),
+      el('div', { class: 'muted', style: 'text-align:center' }, t('game.' + g + '.how')),
+      box, startBtn);
+    if (g === 'stars') requestAnimationFrame(() => { const cv = el('canvas', { id: 'gameCanvas' }); box.append(cv); drawGameIdle(cv); });
+    else box.append(el('div', { class: 'game-idle' }, GAME_ICON[g]));
+    startBtn.onclick = () => {
+      startBtn.disabled = true;
+      runGame(box, g, newSeed(), async (score) => {
+        startBtn.disabled = false; startBtn.textContent = t('mini.again');
         try {
-          const r = await api('POST', '/api/minigame/score', { score });
-          best.textContent = r.best; c.myBest = r.best;
+          const r = await api('POST', '/api/game/score', { game: g, score });
+          best.textContent = r.best;
+          if (c.games && c.games[g]) c.games[g].best = r.best;
           toast(r.newBest ? t('mini.newBest', { n: score }) : t('mini.result', { n: score, best: r.best }), r.newBest ? 'good' : 'info');
         } catch (e) { toast(e.message, 'bad'); }
       });
     };
-    return box;
+    return wrap;
   }
   function drawGameIdle(canvas) {
     const { ctx: g, w, h } = prepCanvas(canvas, 340, 420);
@@ -1161,7 +1237,7 @@
     g.fillText(t('mini.how'), w / 2, h / 2 + 6);
     if (state.me) Avatar.draw(g, state.me.avatar, w / 2, h - 14, { scale: 0.85 });
   }
-  function starCatch(canvas, onEnd) {
+  function starCatch(canvas, onEnd, rand = Math.random) {
     const DUR = 30;
     let px = 170, score = 0, items = [], fx = [], running = true, spawn = 0, raf = 0;
     const t0 = performance.now();
@@ -1177,6 +1253,8 @@
       canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerdown', move);
       window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku);
     };
+    // spawn schedule depends only on the seed, so both PK players get the same falling items
+    let spawnIdx = 0;
     const frame = (tm) => {
       if (!running) return;
       const dt = Math.min(0.05, (tm - last) / 1000); last = tm;
@@ -1186,10 +1264,11 @@
       if (keys.ArrowRight || keys.d) px += 340 * dt;
       px = clamp(px, 20, w - 20);
       spawn -= dt;
-      if (spawn <= 0) {
-        spawn = Math.max(0.2, 0.6 - el2 * 0.013);
-        const r = Math.random();
-        items.push({ x: 20 + Math.random() * (w - 40), y: -20, vy: 130 + el2 * 7 + Math.random() * 70, k: r < 0.16 ? 'bomb' : r < 0.27 ? 'gold' : 'star' });
+      while (spawn <= 0) {
+        spawn += Math.max(0.2, 0.6 - el2 * 0.013);
+        spawnIdx++;
+        const r = rand();
+        items.push({ x: 20 + rand() * (w - 40), y: -20, vy: 130 + el2 * 7 + rand() * 70, k: r < 0.16 ? 'bomb' : r < 0.27 ? 'gold' : 'star' });
       }
       for (const it of items) it.y += it.vy * dt;
       items = items.filter((it) => {
@@ -1225,10 +1304,122 @@
     return cleanup;
   }
 
+  // ---------- quiz duel (5 questions, 10 s each; the server checks the answers)
+  function runQuizDuel(box, questions, onEnd) {
+    stopGame();
+    gameRunning = true;
+    const answers = [];
+    let i = 0, timer = 0, stopped = false;
+    const bar = el('div', {});
+    const show = () => {
+      if (stopped) return;
+      if (i >= questions.length) { gameRunning = false; gameStop = null; box.replaceChildren(el('div', { class: 'game-idle' }, '✅')); onEnd(answers); return; }
+      const q = questions[i], t0 = performance.now();
+      let picked = false;
+      const opts = el('div', { class: 'opts' }, q.options.map((o, k) => el('button', { onclick: () => {
+        if (picked) return; picked = true; clearInterval(timer);
+        answers[i] = { choice: k, ms: Math.round(performance.now() - t0) };
+        i++; setTimeout(show, 250);
+      } }, optLabel(q.options, q.optionsEn, k))));
+      box.replaceChildren(el('div', { class: 'muted' }, `${i + 1} / ${questions.length}`), bi('h3', q.question, q.questionEn), el('div', { class: 'live-timer' }, bar), opts);
+      timer = setInterval(() => {
+        const left = 10000 - (performance.now() - t0);
+        bar.style.width = clamp(left / 100, 0, 100) + '%';
+        if (left <= 0 && !picked) { picked = true; clearInterval(timer); answers[i] = { choice: -1, ms: 10000 }; i++; show(); }
+      }, 100);
+    };
+    gameStop = () => { stopped = true; clearInterval(timer); gameRunning = false; };
+    show();
+  }
+
+  // ---------- PK
+  let pkDraft = { to: '', game: 'stars' };
+  function playPK(p, onDone) {
+    const box = el('div', { class: 'game-stage' });
+    const body = $('#panelBody');
+    body.replaceChildren(el('div', { class: 'game-box' },
+      el('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' },
+        el('b', {}, '⚔️ ' + gameName(p.game)),
+        el('span', { class: 'muted' }, p.from === state.meId ? t('pk.vs', { name: p.toName }) : t('pk.vs', { name: p.fromName }))),
+      box));
+    const submit = async (payload) => {
+      try { const r = await api('POST', '/api/pk/score', { id: p.id, ...payload }); onDone(r.pk); }
+      catch (e) { toast(e.message, 'bad'); renderPanel(); }
+    };
+    if (p.game === 'quiz') runQuizDuel(box, p.quiz || [], (answers) => submit({ answers }));
+    else runGame(box, p.game, p.seed, (score) => submit({ score }));
+  }
+  function pkResultModal(p) {
+    const mineFrom = p.from === state.meId;
+    const my = mineFrom ? p.fromScore : p.toScore, their = mineFrom ? p.toScore : p.fromScore;
+    const res = p.winner === 'tie' ? 'tie' : p.winner === state.meId ? 'win' : 'lose';
+    openModal(el('div', { class: 'room-view', style: 'text-align:center' },
+      el('div', { style: 'font-size:52px' }, res === 'win' ? '🏆' : res === 'tie' ? '🤝' : '💪'),
+      el('h3', {}, t('pk.res.' + res)),
+      el('p', {}, gameName(p.game)),
+      el('div', { class: 'pk-score' },
+        el('div', {}, el('img', { src: Avatar.thumb(state.me.avatar, 56), alt: '' }), el('b', {}, my), el('div', { class: 'muted' }, t('pk.you'))),
+        el('div', { class: 'pk-vs' }, 'VS'),
+        el('div', {}, el('img', { src: Avatar.thumb((mineFrom ? p.toAvatar : p.fromAvatar) || {}, 56), alt: '' }), el('b', {}, their), el('div', { class: 'muted' }, mineFrom ? p.toName : p.fromName))),
+      el('p', { class: 'muted' }, res === 'win' ? t('pk.winPts') : res === 'tie' ? t('pk.tiePts') : t('pk.losePts')),
+      el('button', { class: 'btn primary', onclick: closeModal }, t('ok'))));
+  }
+  function renderPK(c) {
+    const pk = c.pk || { incoming: [], outgoing: [], history: [], record: { w: 0, l: 0, t: 0 } };
+    const members = c.members || [];
+    const onlineIds = new Set(state.players.keys());
+    const sorted = [...members].sort((a, b) => (onlineIds.has(b.id) - onlineIds.has(a.id)) || a.nickname.localeCompare(b.nickname));
+    if (pkDraft.to && !members.some((m) => m.id === pkDraft.to)) pkDraft.to = '';
+    const who = el('select', { class: 'inp' }, el('option', { value: '' }, t('pk.pickWho')), sorted.map((m) => el('option', { value: m.id, selected: m.id === pkDraft.to }, (onlineIds.has(m.id) ? '🟢 ' : '') + m.nickname)));
+    const game = el('select', { class: 'inp' }, [...GAME_LIST, 'quiz'].map((g) => el('option', { value: g, selected: g === pkDraft.game }, gameName(g))));
+    who.onchange = () => { pkDraft.to = who.value; };
+    game.onchange = () => { pkDraft.game = game.value; };
+    const startBtn = el('button', { class: 'btn primary', onclick: async () => {
+      if (!who.value) return toast(t('pk.pickWho'), 'bad');
+      try {
+        const r = await api('POST', '/api/pk/create', { to: who.value, game: game.value });
+        playPK(r.pk, () => { toast(t('pk.sent', { name: r.pk.toName }), 'good', 5000); loadContent(); renderPanel(); });
+      } catch (e) { toast(e.message, 'bad'); }
+    } }, t('pk.start'));
+    const row = (p, kind) => el('div', { class: 'pk-row ' + kind },
+      el('img', { class: 'pk-av', src: Avatar.thumb((kind === 'in' ? p.fromAvatar : p.from === state.meId ? p.toAvatar : p.fromAvatar) || {}, 40), alt: '' }),
+      el('div', { style: 'flex:1;min-width:0' },
+        el('b', {}, kind === 'in' ? t('pk.challengedYou', { name: p.fromName }) : kind === 'out' ? t('pk.waiting', { name: p.toName }) : (p.from === state.meId ? p.toName : p.fromName)),
+        el('div', { class: 'muted' }, gameName(p.game) + ' · ' + fmtDate(p.doneAt || p.createdAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) +
+          (kind === 'out' ? ' · ' + t('pk.yourScore', { n: p.fromScore }) : '') +
+          (kind === 'hist' && p.status === 'done' ? ` · ${p.from === state.meId ? p.fromScore : p.toScore} : ${p.from === state.meId ? p.toScore : p.fromScore}` : ''))),
+      kind === 'in' ? el('div', { style: 'display:flex;gap:4px' },
+        el('button', { class: 'btn small primary', onclick: () => playPK(p, (done) => { loadContent(); renderPanel(); pkResultModal(done); }) }, t('pk.accept')),
+        el('button', { class: 'btn small ghost', onclick: async () => { try { await api('POST', '/api/pk/decline', { id: p.id }); loadContent(); } catch (e) { toast(e.message, 'bad'); } } }, t('pk.decline'))) : null,
+      kind === 'hist' ? el('span', { class: 'tag ' + (p.status !== 'done' ? '' : p.winner === 'tie' ? 'y' : p.winner === state.meId ? 'g' : 'r') },
+        p.status === 'done' ? t('pk.res.' + (p.winner === 'tie' ? 'tie' : p.winner === state.meId ? 'win' : 'lose')) : t('pk.st.' + p.status)) : null);
+    return el('div', {},
+      el('div', { class: 'pk-record' },
+        el('div', {}, el('b', {}, pk.record.w), t('pk.wins')), el('div', {}, el('b', {}, pk.record.l), t('pk.losses')), el('div', {}, el('b', {}, pk.record.t), t('pk.ties'))),
+      pk.incoming.length ? el('div', { class: 'section-t' }, t('pk.incoming', { n: pk.incoming.length })) : null,
+      pk.incoming.map((p) => row(p, 'in')),
+      el('div', { class: 'card' }, el('h3', {}, t('pk.newTitle')), el('p', { class: 'muted', style: 'margin:0 0 6px' }, t('pk.newHint')),
+        el('label', { class: 'field', style: 'margin:6px 0' }, el('span', {}, t('pk.opponent')), who),
+        el('label', { class: 'field', style: 'margin:6px 0' }, el('span', {}, t('pk.game')), game),
+        startBtn),
+      pk.outgoing.length ? el('div', { class: 'section-t' }, t('pk.outgoing', { n: pk.outgoing.length })) : null,
+      pk.outgoing.map((p) => row(p, 'out')),
+      pk.history.length ? el('div', { class: 'section-t' }, t('pk.history')) : null,
+      pk.history.map((p) => row(p, 'hist')));
+  }
+
   // ---------- rank
+  let rankGame = 'stars';
   function renderRank(c) {
-    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['mini', t('rank.mini')]]));
-    const list = tabs.rank === 'points' ? c.leaderboard : c.minigame;
+    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['games', t('rank.games')], ['pk', t('rank.pk')]]));
+    let list, value;
+    if (tabs.rank === 'points') { list = c.leaderboard; value = (u) => `⭐ ${u.points}`; }
+    else if (tabs.rank === 'pk') { list = c.pkBoard || []; value = (u) => t('rank.pkWins', { n: u.wins }); }
+    else {
+      wrap.append(el('div', { class: 'cz-opts', style: 'margin-bottom:8px' }, GAME_LIST.map((g) => el('button', { class: rankGame === g ? 'on' : '', onclick: () => { rankGame = g; renderPanel(); } }, gameName(g)))));
+      list = (c.games && c.games[rankGame] && c.games[rankGame].board) || [];
+      value = (u) => `${u.score}`;
+    }
     if (!list.length) { wrap.append(el('div', { class: 'empty' }, t('rank.empty'))); return wrap; }
     list.forEach((u, i) => {
       const p = state.players.get(u.id);
@@ -1236,7 +1427,7 @@
         el('div', { class: 'rank-n' }, ['🥇', '🥈', '🥉'][i] || i + 1),
         avatarImg(u.avatar),
         el('div', { class: 'pinfo' }, el('b', {}, u.nickname), el('span', {}, p ? t('rank.online') : t('rank.offline'))),
-        el('div', { class: 'pts' }, tabs.rank === 'points' ? `⭐ ${u.points}` : `${u.score} ⭐`)));
+        el('div', { class: 'pts' }, value(u))));
     });
     return wrap;
   }
@@ -1257,7 +1448,7 @@
     for (const e of owing) wrap.append(el('div', { class: 'card pay-alert' }, t('pay.banner', { title: e.title, date: payByText(e), fee: money(e.fee), cur: cur() })));
     if (state.announcements.length) {
       wrap.append(el('div', { class: 'card', style: 'background:#FFF3C4' }, el('b', {}, t('hq.news')),
-        state.announcements.slice(-3).reverse().map((a) => el('div', { style: 'margin-top:4px' }, a.text, ' ', el('span', { class: 'muted' }, fmtDate(a.editedAt || a.createdAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))))));
+        state.announcements.slice(-3).reverse().map((a) => el('div', { style: 'margin-top:4px' }, bi('span', a.text, a.textEn), ' ', el('span', { class: 'muted' }, fmtDate(a.editedAt || a.createdAt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))))));
     }
     if (c.polls && c.polls.length) {
       wrap.append(el('div', { class: 'section-t' }, t('poll.title')));
@@ -1282,13 +1473,13 @@
     const voted = p.myVote !== null && p.myVote !== undefined;
     const showResults = voted || p.closed;
     return el('div', { class: 'card poll' },
-      el('div', { class: 'card-top' }, el('h3', {}, '🗳️ ' + p.question), el('span', { class: 'tag ' + (p.closed ? '' : 'p') }, p.closed ? t('poll.closed') : t('poll.votes', { n: p.total }))),
+      el('div', { class: 'card-top' }, el('h3', {}, '🗳️ ', bi('span', p.question, p.questionEn)), el('span', { class: 'tag ' + (p.closed ? '' : 'p') }, p.closed ? t('poll.closed') : t('poll.votes', { n: p.total }))),
       p.closesAt && !p.closed ? el('div', { class: 'muted' }, t('poll.closes', { date: fmtDate(p.closesAt) })) : null,
       el('div', { class: 'poll-opts' }, p.options.map((o, i) => {
         const pct = p.total ? Math.round((p.counts[i] / p.total) * 100) : 0;
         const b = el('button', { class: 'poll-opt' + (p.myVote === i ? ' mine' : ''), disabled: p.closed },
           showResults ? el('i', { style: `width:${pct}%` }) : null,
-          el('span', {}, (p.myVote === i ? '✅ ' : '') + o),
+          el('span', {}, (p.myVote === i ? '✅ ' : '') + pickLang(o, (p.optionsEn || [])[i]), otherLang(o, (p.optionsEn || [])[i]) ? el('span', { class: 'bi-sub' }, otherLang(o, (p.optionsEn || [])[i])) : null),
           showResults ? el('b', {}, `${pct}% · ${p.counts[i]}`) : null);
         b.onclick = async () => {
           try { await api('POST', '/api/poll/vote', { id: p.id, choice: i }); toast(t('poll.thanks'), 'good'); loadContent(); } catch (e) { toast(e.message, 'bad'); }
@@ -1320,7 +1511,7 @@
           el('div', { class: 'd' }, d.getDate()),
           el('div', { class: 'w' }, d.toLocaleDateString(L, { weekday: 'short' }))),
       el('div', { class: 'info' },
-        el('h3', {}, e.title),
+        bi('h3', e.title, e.titleEn),
         e.tbc ? el('div', { class: 'countdown' }, t('event.tbcLong'))
           : !isPast ? el('div', { class: 'countdown' }, start > Date.now() ? '⏳ ' + relTime(start - Date.now()) : t('event.live')) : null,
         e.tbc ? null : el('div', { class: 'meta' }, '🕒 ' + fmtDate(e.date) + (e.endDate ? ' – ' + fmtDate(e.endDate, { hour: '2-digit', minute: '2-digit' }) : '')),
@@ -1330,8 +1521,8 @@
           el('span', { class: 'tag ' + (paid ? 'y' : 'g') }, paid ? t('event.fee', { fee: money(e.fee), cur: cur() }) : t('event.free')),
           el('span', { class: 'tag' }, e.capacity ? t('event.quota', { n: e.count, cap: e.capacity }) : t('event.going', { n: e.count })),
           mine ? el('span', { class: 'tag ' + (mine.status === 'unpaid' ? 'r' : mine.status === 'submitted' ? 'p' : 'g') }, t('pay.status.' + mine.status)) : null),
-        e.content ? el('div', { class: 'content' }, e.content) : null,
-        isPast && e.record ? el('div', { class: 'record' }, el('b', {}, t('event.record')), el('br'), e.record) : null,
+        e.content ? bi('div', e.content, e.contentEn, { class: 'content' }) : null,
+        isPast && e.record ? el('div', { class: 'record' }, el('b', {}, t('event.record')), el('br'), bi('span', e.record, e.recordEn)) : null,
         !isPast && paid && mine ? payBox(e) : null,
         !isPast ? el('div', { class: 'actions' }, joinBtn,
           e.tbc ? null : el('button', { class: 'btn small', onclick: () => downloadIcs(e) }, t('event.ics')),
@@ -1501,7 +1692,7 @@
     const bar = el('div', {});
     const status = el('div', { class: 'muted', style: 'margin-top:8px;text-align:center' }, d.answered ? t('live.answered') : t('live.points', { n: d.points }));
     const opts = el('div', { class: 'opts' }, d.options.map((o, i) => {
-      const b = el('button', { disabled: !!d.answered }, `${'ABCD'[i]}. ${o}`);
+      const b = el('button', { disabled: !!d.answered }, optLabel(d.options, d.optionsEn, i));
       b.onclick = async () => {
         opts.querySelectorAll('button').forEach((x) => { x.disabled = true; });
         b.style.borderColor = 'var(--blue)';
@@ -1511,7 +1702,7 @@
       return b;
     }));
     openModal(el('div', { class: 'live-card' },
-      el('div', { class: 'tag p' }, t('live.tag')), el('h3', {}, d.question),
+      el('div', { class: 'tag p' }, t('live.tag')), bi('h3', d.question, d.questionEn),
       el('div', { class: 'live-timer' }, bar), opts, status,
       el('div', { class: 'muted', style: 'text-align:center;margin-top:4px', id: 'liveCount' }, t('live.count', { n: d.count || 0 }))), 'live');
     const total = Math.max(1000, d.endsAt - Date.now());
@@ -1525,8 +1716,8 @@
     state.live = null;
     clearInterval(liveTimer);
     openModal(el('div', { class: 'live-card' },
-      el('div', { class: 'tag p' }, t('live.result')), el('h3', {}, r.question),
-      el('div', { class: 'opts' }, r.options.map((o, i) => el('button', { disabled: true, class: i === r.answer ? 'right' : i === picked ? 'wrong' : '' }, `${'ABCD'[i]}. ${o}`))),
+      el('div', { class: 'tag p' }, t('live.result')), bi('h3', r.question, r.questionEn),
+      el('div', { class: 'opts' }, r.options.map((o, i) => el('button', { disabled: true, class: i === r.answer ? 'right' : i === picked ? 'wrong' : '' }, optLabel(r.options, r.optionsEn, i)))),
       el('p', { style: 'text-align:center;font-weight:800' }, picked == null ? t('live.none') : picked === r.answer ? t('live.right') : t('live.wrong')),
       el('p', { class: 'muted', style: 'text-align:center' }, t('live.stats', { c: r.correctCount, t: r.total })),
       r.winners.length ? el('p', { style: 'text-align:center' }, '🏅 ' + r.winners.slice(0, 5).join(I18N.lang === 'zh' ? '、' : ', ')) : null,

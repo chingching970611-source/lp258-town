@@ -22,7 +22,46 @@ const PW_FILE = path.join(DATA_DIR, 'admin-password.txt');
 const TZ_OFFSET_H = Number.isFinite(Number(process.env.TZ_OFFSET_HOURS)) && process.env.TZ_OFFSET_HOURS !== undefined ? Number(process.env.TZ_OFFSET_HOURS) : 8;
 const WORLD = { w: 1600, h: 1020 };
 const SPAWN = { x: 800, y: 585 };
-const DB_VERSION = 3;
+const DB_VERSION = 4;
+// English versions of the built-in sample content (matched by the Chinese text).
+const EN_SEED = {
+  quiz: {
+    '地球上最大的海洋是？': ['Which is the largest ocean on Earth?', ['Atlantic', 'Pacific', 'Indian', 'Arctic']],
+    '一年有多少个星期？': ['How many weeks are there in a year?', ['48', '50', '52', '54']],
+    '彩虹一般有几种颜色？': ['How many colours does a rainbow usually have?', ['5', '6', '7', '8']],
+    '哪种动物被称为「沙漠之舟」？': ['Which animal is called the "ship of the desert"?', ['Horse', 'Camel', 'Elephant', 'Donkey']],
+    '「你好」的日文是？': ['How do you say "hello" in Japanese?', ['こんにちは', 'ありがとう', 'さようなら', 'すみません']],
+    '水在海平面的沸点是？': ['What is the boiling point of water at sea level?', ['90°C', '100°C', '110°C', '120°C']],
+  },
+  riddles: {
+    '什么东西越洗越脏？': ['What gets dirtier the more you wash with it?', 'You use it every day', 'water'],
+    '什么门永远关不上？': ['What kind of "door" (门) can never be closed?', 'You see it in football', 'goal'],
+    '有头无颈，有眼无眉，无脚能走，有翅难飞（打一动物）': ["Has a head but no neck, eyes but no brows, moves without legs, has fins but can't fly (an animal)", 'It lives in water', 'fish'],
+    '千里相逢（打一字）': ['"A thousand li meet" — guess the Chinese character', '千 + 里', ''],
+    '一口咬掉牛尾巴（打一字）': ['"One mouth bites off the ox\'s tail" — guess the Chinese character', '牛 without its tail, plus 口', ''],
+  },
+  challenges: {
+    '带一位新朋友来活动': ['Bring a new friend to an event', 'Bring someone who has never come before to any event, and submit their nickname.'],
+    '分享活动照片': ['Share an event photo', 'Take a group photo at an event and submit the photo link.'],
+    '连续参加 3 次活动': ['Join 3 events in a row', 'Attend 3 events in a row and submit the event names.'],
+  },
+  events: {
+    '冬日聚会 Winter Meetup': ['Winter Meetup', 'Food, games and new friends! There is a quiz round with points to win 🎁', ''],
+    '周末徒步 Hiking Day': ['Hiking Day', 'An easy route, great for beginners. Bring water and a hat 🧢', ''],
+    '开幕派对 Opening Party': ['Opening Party', 'The town officially opens!', '40 friends came, we played 3 quiz rounds and Team Rainbow won 🌈 Thank you all!'],
+  },
+  announcement: ['欢迎来到 LP 258 小镇！选好你的造型，和大家打个招呼吧 👋', 'Welcome to LP 258 Town! Pick your look and say hi to everyone 👋'],
+};
+function addEnglish(d) {
+  for (const q of d.quiz || []) { const e = EN_SEED.quiz[q.question]; if (e && !q.questionEn) { q.questionEn = e[0]; q.optionsEn = e[1]; } }
+  for (const r of d.riddles || []) {
+    const e = EN_SEED.riddles[r.question];
+    if (e && !r.questionEn) { r.questionEn = e[0]; r.hintEn = e[1]; if (e[2] && !r.answer.split('|').includes(e[2])) r.answer += '|' + e[2]; }
+  }
+  for (const c of d.challenges || []) { const e = EN_SEED.challenges[c.title]; if (e && !c.titleEn) { c.titleEn = e[0]; c.descriptionEn = e[1]; } }
+  for (const ev of d.events || []) { const e = EN_SEED.events[ev.title]; if (e && !ev.titleEn) { ev.titleEn = e[0]; ev.contentEn = e[1]; if (ev.record) ev.recordEn = e[2]; } }
+  for (const a of d.announcements || []) if (a.text === EN_SEED.announcement[0] && !a.textEn) a.textEn = EN_SEED.announcement[1];
+}
 const FILES_FILE = path.join(DATA_DIR, 'files.json');
 
 const uid = (n = 8) => crypto.randomBytes(n).toString('hex');
@@ -78,6 +117,8 @@ function seedDb() {
     submissions: [],
     solved: {},
     minigame: {},
+    games: { memory: {}, whack: {}, caterpillar: {} },
+    pk: [],
     chat: [],
     announcements: [{ id: uid(4), text: '欢迎来到 LP 258 小镇！选好你的造型，和大家打个招呼吧 👋', createdAt: now() }],
     admin: null,
@@ -110,6 +151,12 @@ function migrate(d) {
     delete d.rsvps;
     d.polls = d.polls || [];
     d.meta.v = 3;
+  }
+  if (d.meta.v < 4) {
+    addEnglish(d);
+    d.games = d.games || { memory: {}, whack: {}, caterpillar: {} };
+    d.pk = d.pk || [];
+    d.meta.v = 4;
   }
   console.log('🔧 Upgraded data to version', DB_VERSION);
   return true;
@@ -154,10 +201,11 @@ function archive(d, col, item, extra) {
   d.trash.push({ id: Math.random().toString(16).slice(2, 10), col, item, deletedAt: Date.now(), ...extra });
   if (d.trash.length > 500) d.trash.splice(0, d.trash.length - 500);
 }
+function seedWithEnglish() { const d = seedDb(); addEnglish(d); return d; }
 function loadDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const base = seedDb();
-  if (!fs.existsSync(DB_FILE)) return base;
+  if (!fs.existsSync(DB_FILE)) return seedWithEnglish();
   try {
     const d = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!d.meta) d.meta = { v: 1 };
@@ -402,7 +450,7 @@ let live = null;
 let lastLiveResult = null;
 function liveForClient(userId) {
   if (!live) return null;
-  return { id: live.id, question: live.question, options: live.options, endsAt: live.endsAt, points: live.points,
+  return { id: live.id, question: live.question, questionEn: live.questionEn, options: live.options, optionsEn: live.optionsEn, endsAt: live.endsAt, points: live.points,
     answered: live.answers.has(userId), count: live.answers.size };
 }
 function endLive() {
@@ -417,7 +465,7 @@ function endLive() {
     award(u, L.points + (i === 0 ? 5 : 0), null);
     winners.push(u.nickname);
   });
-  lastLiveResult = { id: L.id, question: L.question, options: L.options, answer: L.answer, winners: winners.slice(0, 10),
+  lastLiveResult = { id: L.id, question: L.question, questionEn: L.questionEn, options: L.options, optionsEn: L.optionsEn, answer: L.answer, winners: winners.slice(0, 10),
     correctCount: correct.length, total: L.answers.size, at: now() };
   broadcast('liveResult', lastLiveResult);
   systemMsg('sys.liveEnd', { answer: L.options[L.answer], count: correct.length, first: winners[0] || '' });
@@ -462,11 +510,12 @@ setInterval(paymentReminders, Number(process.env.REMINDER_INTERVAL_MS) || 5 * 60
 // ---------------------------------------------------------------- content schemas (admin CRUD)
 const SCHEMAS = {
   events: { title: ['line', 80, true], tbc: ['bool'], venue: ['line', 100], address: ['line', 200], date: ['date'], endDate: ['date'], content: ['str', 3000], record: ['str', 5000],
+    titleEn: ['line', 80], contentEn: ['str', 3000], recordEn: ['str', 5000],
     fee: ['money'], payInfo: ['str', 600], payDeadline: ['date'], capacity: ['int', 0, 100000] },
-  polls: { question: ['str', 300, true], options: ['options', 6], closesAt: ['date'] },
-  quiz: { question: ['str', 300, true], options: ['options'], answer: ['int', 0, 3], points: ['int', 0, 1000] },
-  riddles: { question: ['str', 300, true], answer: ['line', 200, true], hint: ['line', 200], points: ['int', 0, 1000] },
-  challenges: { title: ['line', 100, true], description: ['str', 1500], points: ['int', 0, 10000], active: ['bool'] },
+  polls: { question: ['str', 300, true], questionEn: ['str', 300], options: ['options', 6], optionsEn: ['optionsLoose', 6], closesAt: ['date'] },
+  quiz: { question: ['str', 300, true], questionEn: ['str', 300], options: ['options'], optionsEn: ['optionsLoose', 4], answer: ['int', 0, 3], points: ['int', 0, 1000] },
+  riddles: { question: ['str', 300, true], questionEn: ['str', 300], answer: ['line', 200, true], hint: ['line', 200], hintEn: ['line', 200], points: ['int', 0, 1000] },
+  challenges: { title: ['line', 100, true], titleEn: ['line', 100], description: ['str', 1500], descriptionEn: ['str', 1500], points: ['int', 0, 10000], active: ['bool'] },
 };
 function cleanItem(col, input) {
   const out = {};
@@ -488,6 +537,9 @@ function cleanItem(col, input) {
     } else if (type === 'money') {
       const n = Math.round(Number(v) * 100) / 100;
       out[k] = Number.isFinite(n) && n > 0 ? Math.min(n, 1e6) : 0;
+    } else if (type === 'optionsLoose') {
+      const arr = (Array.isArray(v) ? v : []).slice(0, spec[1] || 4).map((x) => line(x, 120));
+      out[k] = arr.some(Boolean) ? arr : [];
     } else if (type === 'options') {
       const arr = (Array.isArray(v) ? v : []).map((x) => line(x, 120)).filter(Boolean).slice(0, spec[1] || 4);
       if (arr.length < 2) throw httpErr(400, 'min_options');
@@ -664,12 +716,18 @@ route('POST /api/move', async (req, res, body) => {
 route('POST /api/chat', async (req, res, body) => {
   const u = needUser(req);
   const text = str(body.text, 300);
-  if (!text) throw httpErr(400, 'empty_msg');
+  if (!text && !body.image) throw httpErr(400, 'empty_msg');
   rate(rateBag(u.id), 'chat', 500);
   const msg = { id: uid(4), from: u.id, name: u.nickname, text, at: now() };
+  const target = body.to ? db.users[body.to] : null;
+  if (body.to && (!target || target.banned)) throw httpErr(404, 'friend_not_found');
+  if (body.image) {
+    rate(rateBag(u.id), 'chatImage', 3000);
+    msg.image = storeImage(body.image, 'chat', u.id);
+    if (target) { files[msg.image].dm = [u.id, target.id]; saveFiles(); }
+  }
   if (body.to) {
-    const t = db.users[body.to];
-    if (!t || t.banned) throw httpErr(404, 'friend_not_found');
+    const t = target;
     msg.to = t.id;
     msg.toName = t.nickname;
     sendTo(t.id, 'chat', msg);
@@ -734,24 +792,28 @@ route('GET /api/content', async (req, res) => {
   const pollOut = (p) => {
     const counts = p.options.map(() => 0);
     for (const v of Object.values(p.votes || {})) if (counts[v] !== undefined) counts[v]++;
-    return { id: p.id, question: p.question, options: p.options, closesAt: p.closesAt || '', counts, total: counts.reduce((a, b) => a + b, 0),
+    return { id: p.id, question: p.question, questionEn: p.questionEn || '', options: p.options, optionsEn: p.optionsEn || [], closesAt: p.closesAt || '', counts, total: counts.reduce((a, b) => a + b, 0),
       myVote: p.votes && p.votes[u.id] !== undefined ? p.votes[u.id] : null, closed: !!(p.closesAt && Date.parse(p.closesAt) < now()), createdAt: p.createdAt, updatedAt: p.updatedAt };
   };
   json(res, 200, {
     events: [...db.events].sort((a, b) => (a.tbc ? 9e15 : Date.parse(a.date) || 0) - (b.tbc ? 9e15 : Date.parse(b.date) || 0))
-      .map(({ id, title, tbc, venue, address, date, endDate, content, record, fee, payInfo, payDeadline: pd, capacity, qrFile, updatedAt, createdAt }) => {
+      .map(({ id, title, titleEn, contentEn, recordEn, tbc, venue, address, date, endDate, content, record, fee, payInfo, payDeadline: pd, capacity, qrFile, updatedAt, createdAt }) => {
         const mine = att(id)[u.id];
-        return { id, title, tbc: !!tbc, venue, address, date: date || '', endDate, content, record, fee: fee || 0, payInfo: payInfo || '', payDeadline: pd || '', capacity: capacity || 0,
+        return { id, title, titleEn: titleEn || '', contentEn: contentEn || '', recordEn: recordEn || '', tbc: !!tbc, venue, address, date: date || '', endDate, content, record, fee: fee || 0, payInfo: payInfo || '', payDeadline: pd || '', capacity: capacity || 0,
           qrFile: qrFile || null, updatedAt: updatedAt || createdAt || null, count: Object.keys(att(id)).length,
           mine: mine ? { status: mine.status, proofFile: mine.proofFile || null, submittedAt: mine.submittedAt || null, paidAt: mine.paidAt || null, note: mine.note || '' } : null };
       }),
     polls: [...db.polls].reverse().map(pollOut),
     quiz: db.quiz.map((q) => {
       const st = s.quiz[q.id];
-      return { id: q.id, question: q.question, options: q.options, points: q.points, result: st || null, answer: st ? q.answer : undefined };
+      return { id: q.id, question: q.question, questionEn: q.questionEn || '', options: q.options, optionsEn: q.optionsEn || [], points: q.points, result: st || null, answer: st ? q.answer : undefined };
     }),
-    riddles: db.riddles.map((r) => ({ id: r.id, question: r.question, hint: r.hint, points: r.points, solved: s.riddles.includes(r.id) })),
-    challenges: db.challenges.filter((c) => c.active !== false).map(({ id, title, description, points }) => ({ id, title, description, points })),
+    riddles: db.riddles.map((r) => ({ id: r.id, question: r.question, questionEn: r.questionEn || '', hint: r.hint, hintEn: r.hintEn || '', points: r.points, solved: s.riddles.includes(r.id) })),
+    challenges: db.challenges.filter((c) => c.active !== false).map(({ id, title, titleEn, description, descriptionEn, points }) => ({ id, title, titleEn: titleEn || '', description, descriptionEn: descriptionEn || '', points })),
+    games: Object.fromEntries(GAMES.map((g) => [g, { best: gameScores(g)[u.id] || 0, board: gameBoard(g).slice(0, 10) }])),
+    pk: pkFor(u.id),
+    pkBoard: pkBoard(),
+    members: Object.values(db.users).filter((x) => !x.banned && x.id !== u.id).map((x) => ({ id: x.id, nickname: x.nickname, avatar: x.avatar })).sort((a, b) => a.nickname.localeCompare(b.nickname)),
     mySubmissions: db.submissions.filter((x) => x.userId === u.id).map(({ id, challengeId, text, status, createdAt }) => ({ id, challengeId, text, status, createdAt })),
     leaderboard: leaderboard(),
     minigame: minigameBoard(),
@@ -785,6 +847,145 @@ route('POST /api/riddle/answer', async (req, res, body) => {
   const ok = !!guess && r.answer.split('|').map(normAnswer).filter(Boolean).includes(guess);
   if (ok) { s.riddles.push(r.id); save(); award(u, r.points, 'sys.riddle'); }
   json(res, 200, { correct: ok, points: u.points });
+});
+
+// Casual games: best score per game. 'stars' keeps using the original minigame table.
+const GAMES = ['stars', 'memory', 'whack', 'caterpillar', 'slice'];
+const GAME_MAX = { stars: 400, memory: 1000, whack: 400, caterpillar: 400, slice: 400 };
+const GAME_MIN_REWARD = { stars: 10, memory: 100, whack: 10, caterpillar: 5, slice: 10 };
+const gameScores = (g) => (g === 'stars' ? db.minigame : (db.games[g] || (db.games[g] = {})));
+function gameBoard(g) {
+  return Object.entries(gameScores(g)).map(([id, score]) => ({ u: db.users[id], score })).filter((x) => x.u && !x.u.banned)
+    .sort((a, b) => b.score - a.score).slice(0, 20).map((x) => ({ id: x.u.id, nickname: x.u.nickname, avatar: x.u.avatar, score: x.score }));
+}
+route('POST /api/game/score', async (req, res, body) => {
+  const u = needUser(req);
+  const g = body.game;
+  if (!GAMES.includes(g)) throw httpErr(400, 'bad_request');
+  rate(rateBag(u.id), 'game', 3000);
+  const score = clamp(Math.floor(Number(body.score) || 0), 0, GAME_MAX[g]);
+  const table = gameScores(g);
+  const prev = table[u.id] || 0;
+  const newBest = score > prev;
+  if (newBest) {
+    table[u.id] = score;
+    save();
+    if (score >= GAME_MIN_REWARD[g]) award(u, 5, 'sys.gameBest', { game: g, score });
+    broadcast('content', { col: 'games' });
+  }
+  json(res, 200, { best: Math.max(prev, score), newBest });
+});
+
+// PK: challenge another member to the same round of a game (same seed / same questions).
+const PK_GAMES = [...GAMES, 'quiz'];
+const PK_WIN = 10, PK_TIE = 5;
+const nameOf = (id) => (db.users[id] ? db.users[id].nickname : '—');
+const avatarOf = (id) => (db.users[id] ? db.users[id].avatar : null);
+function pkQuiz(p) {
+  return (p.quizIds || []).map((id) => db.quiz.find((q) => q.id === id)).filter(Boolean)
+    .map((q) => ({ id: q.id, question: q.question, questionEn: q.questionEn || '', options: q.options, optionsEn: q.optionsEn || [] }));
+}
+function pkTidy() {
+  const t = now();
+  let changed = false;
+  db.pk = db.pk.filter((p) => !(p.status === 'draft' && t - p.createdAt > 3600000));
+  for (const p of db.pk) if (p.status === 'pending' && t - p.createdAt > 3 * 86400000) { p.status = 'expired'; changed = true; }
+  if (db.pk.length > 1000) db.pk.splice(0, db.pk.length - 1000);
+  if (changed) save();
+}
+function pkOut(p, me) {
+  const done = p.status === 'done';
+  return { id: p.id, game: p.game, seed: p.seed, status: p.status, createdAt: p.createdAt, doneAt: p.doneAt || null,
+    from: p.from, fromName: nameOf(p.from), fromAvatar: avatarOf(p.from), to: p.to, toName: nameOf(p.to), toAvatar: avatarOf(p.to),
+    fromScore: done || p.from === me ? p.fromScore : null, toScore: done || p.to === me ? p.toScore : null, winner: p.winner || null,
+    quiz: p.game === 'quiz' && (p.status === 'pending' || p.status === 'draft') ? pkQuiz(p) : undefined };
+}
+function pkFor(me) {
+  pkTidy();
+  const mine = db.pk.filter((p) => p.from === me || p.to === me);
+  const record = { w: 0, l: 0, t: 0 };
+  for (const p of mine) if (p.status === 'done') { if (p.winner === 'tie') record.t++; else if (p.winner === me) record.w++; else record.l++; }
+  return {
+    incoming: mine.filter((p) => p.to === me && p.status === 'pending').map((p) => pkOut(p, me)),
+    outgoing: mine.filter((p) => p.from === me && p.status === 'pending').map((p) => pkOut(p, me)),
+    history: mine.filter((p) => ['done', 'declined', 'expired'].includes(p.status)).slice(-20).reverse().map((p) => pkOut(p, me)),
+    record,
+  };
+}
+function pkBoard() {
+  const wins = {};
+  for (const p of db.pk) if (p.status === 'done' && p.winner && p.winner !== 'tie' && db.users[p.winner]) wins[p.winner] = (wins[p.winner] || 0) + 1;
+  return Object.entries(wins).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([id, w]) => ({ id, nickname: nameOf(id), avatar: avatarOf(id), wins: w }));
+}
+function pkScoreQuiz(p, answers) {
+  const qs = (p.quizIds || []).map((id) => db.quiz.find((q) => q.id === id));
+  let score = 0;
+  (Array.isArray(answers) ? answers : []).slice(0, qs.length).forEach((a, i) => {
+    const q = qs[i];
+    if (!q || !a || Number(a.choice) !== q.answer) return;
+    const ms = clamp(Number(a.ms) || 10000, 0, 10000);
+    score += 100 + Math.round(50 * (1 - ms / 10000)); // up to +50 for answering fast
+  });
+  return score;
+}
+route('POST /api/pk/create', async (req, res, body) => {
+  const u = needUser(req);
+  const to = db.users[body.to];
+  if (!to || to.banned || to.id === u.id) throw httpErr(400, 'pk_bad_opponent');
+  if (!PK_GAMES.includes(body.game)) throw httpErr(400, 'bad_request');
+  pkTidy();
+  if (db.pk.filter((p) => p.from === u.id && (p.status === 'pending' || p.status === 'draft')).length >= 10) throw httpErr(429, 'pk_too_many');
+  rate(rateBag(u.id), 'pk', 2000);
+  const p = { id: uid(5), from: u.id, to: to.id, game: body.game, seed: crypto.randomInt(1, 2 ** 31 - 1), status: 'draft', createdAt: now() };
+  if (p.game === 'quiz') {
+    if (db.quiz.length < 3) throw httpErr(409, 'pk_need_quiz');
+    const pool = [...db.quiz];
+    for (let i = pool.length - 1; i > 0; i--) { const k = crypto.randomInt(0, i + 1); [pool[i], pool[k]] = [pool[k], pool[i]]; }
+    p.quizIds = pool.slice(0, 5).map((q) => q.id);
+  }
+  db.pk.push(p);
+  save();
+  json(res, 200, { pk: pkOut(p, u.id) });
+});
+route('POST /api/pk/score', async (req, res, body) => {
+  const u = needUser(req);
+  const p = db.pk.find((x) => x.id === body.id);
+  if (!p) throw httpErr(404, 'not_found');
+  const score = p.game === 'quiz' ? pkScoreQuiz(p, body.answers) : clamp(Math.floor(Number(body.score) || 0), 0, GAME_MAX[p.game]);
+  if (p.from === u.id && p.status === 'draft') {
+    p.fromScore = score;
+    p.status = 'pending';
+    p.createdAt = now();
+    save();
+    sendTo(p.to, 'notice', { key: 'notice.pkIncoming', params: { name: u.nickname, game: p.game } });
+    sendTo(p.to, 'content', { col: 'pk' });
+    return json(res, 200, { pk: pkOut(p, u.id) });
+  }
+  if (p.to === u.id && p.status === 'pending') {
+    p.toScore = score;
+    p.status = 'done';
+    p.doneAt = now();
+    p.winner = p.toScore > p.fromScore ? p.to : p.toScore < p.fromScore ? p.from : 'tie';
+    const a = db.users[p.from], b = db.users[p.to];
+    if (p.winner === 'tie') { if (a) award(a, PK_TIE, null); if (b) award(b, PK_TIE, null); systemMsg('sys.pkTie', { a: nameOf(p.from), b: nameOf(p.to), game: p.game }); }
+    else { const w = db.users[p.winner]; if (w) award(w, PK_WIN, null); systemMsg('sys.pkWin', { winner: nameOf(p.winner), loser: nameOf(p.winner === p.from ? p.to : p.from), game: p.game, pts: PK_WIN }); }
+    save();
+    sendTo(p.from, 'notice', { key: 'notice.pkResult', params: { name: u.nickname, game: p.game, mine: p.fromScore, theirs: p.toScore, result: p.winner === 'tie' ? 'tie' : p.winner === p.from ? 'win' : 'lose' } });
+    sendTo(p.from, 'content', { col: 'pk' });
+    return json(res, 200, { pk: pkOut(p, u.id) });
+  }
+  throw httpErr(409, 'pk_closed');
+});
+route('POST /api/pk/decline', async (req, res, body) => {
+  const u = needUser(req);
+  const p = db.pk.find((x) => x.id === body.id);
+  if (!p || p.to !== u.id || p.status !== 'pending') throw httpErr(409, 'pk_closed');
+  p.status = 'declined';
+  p.doneAt = now();
+  save();
+  sendTo(p.from, 'notice', { key: 'notice.pkDeclined', params: { name: u.nickname, game: p.game } });
+  sendTo(p.from, 'content', { col: 'pk' });
+  json(res, 200, { ok: true });
 });
 
 route('POST /api/minigame/score', async (req, res, body) => {
@@ -1079,6 +1280,7 @@ route('POST /api/admin/user/merge', async (req, res, body) => {
   if (!from || !into || from.id === into.id) throw httpErr(400, 'bad_request');
   into.points = (into.points || 0) + (from.points || 0);
   if ((db.minigame[from.id] || 0) > (db.minigame[into.id] || 0)) db.minigame[into.id] = db.minigame[from.id];
+  for (const g of Object.keys(db.games || {})) { const tb = db.games[g]; if ((tb[from.id] || 0) > (tb[into.id] || 0)) tb[into.id] = tb[from.id]; delete tb[from.id]; }
   delete db.minigame[from.id];
   const sf = db.solved[from.id], si = solvedOf(into.id);
   if (sf) {
@@ -1116,6 +1318,7 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
   delete db.users[u.id];
   delete db.solved[u.id];
   delete db.minigame[u.id];
+  for (const tb of Object.values(db.games || {})) delete tb[u.id];
   for (const a of Object.values(db.attendance)) if (a[u.id]) delete a[u.id];
   for (const p of db.polls) if (p.votes) delete p.votes[u.id];
   db.submissions = db.submissions.filter((s) => s.userId !== u.id);
@@ -1127,14 +1330,16 @@ route('POST /api/admin/user/delete', async (req, res, body) => {
 route('POST /api/admin/announce', async (req, res, body) => {
   needAdmin(req);
   const text = str(body.text, 300);
+  const textEn = str(body.textEn, 300);
   if (!text) throw httpErr(400, 'field_required', { field: 'text' });
   const existing = body.id ? db.announcements.find((a) => a.id === body.id) : null;
   if (existing) {
     existing.text = text;
+    existing.textEn = textEn;
     existing.editedAt = now();
     broadcast('announceUpdated', existing);
   } else {
-    const a = { id: uid(4), text, createdAt: now() };
+    const a = { id: uid(4), text, textEn, createdAt: now() };
     db.announcements.push(a);
     if (db.announcements.length > 50) db.announcements.shift();
     broadcast('announce', a);
@@ -1180,7 +1385,7 @@ route('POST /api/admin/live/start', async (req, res, body) => {
   const q = db.quiz.find((x) => x.id === body.quizId);
   if (!q) throw httpErr(404, 'not_found');
   const secs = clamp(Math.round(Number(body.seconds) || 20), 10, 120);
-  live = { id: uid(4), quizId: q.id, question: q.question, options: q.options, answer: q.answer, points: q.points, endsAt: now() + secs * 1000, answers: new Map() };
+  live = { id: uid(4), quizId: q.id, question: q.question, questionEn: q.questionEn || '', options: q.options, optionsEn: q.optionsEn || [], answer: q.answer, points: q.points, endsAt: now() + secs * 1000, answers: new Map() };
   setTimeout(endLive, secs * 1000 + 300);
   broadcast('live', liveForClient(null));
   systemMsg('sys.liveStart', {});
@@ -1286,7 +1491,8 @@ const server = http.createServer(async (req, res) => {
       const tok = url.searchParams.get('t') || '';
       const isAdmin = (adminSessions.get(tok) || 0) > now();
       const member = userFromToken(tok);
-      if (!f || !(isAdmin || (member && !member.banned && (f.kind === 'qr' || f.owner === member.id)))) return json(res, 404, { error: 'not_found' });
+      const canSee = member && !member.banned && (f.kind === 'qr' || f.owner === member.id || (f.kind === 'chat' && (!f.dm || f.dm.includes(member.id))));
+      if (!f || !(isAdmin || canSee)) return json(res, 404, { error: 'not_found' });
       res.writeHead(200, { 'Content-Type': f.type, 'Cache-Control': 'private, max-age=86400' });
       return res.end(Buffer.from(f.data, 'base64'));
     }
@@ -1320,7 +1526,7 @@ const server = http.createServer(async (req, res) => {
         migrate(db);
         rebuildTokens();
         console.log(`☁️  Loaded data from GitHub Gist (${Object.keys(db.users).length} members)`);
-      } else console.log('☁️  Gist is empty — starting with sample content');
+      } else { addEnglish(db); console.log('☁️  Gist is empty — starting with sample content'); }
     } catch (e) {
       console.error('❌ Could not load data from GitHub Gist:', e.message);
       console.error('   Check GIST_ID and GITHUB_TOKEN (needs the "gist" scope).');

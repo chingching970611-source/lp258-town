@@ -314,3 +314,64 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .rec-fields .field { margin: 10px 0; }
 .rec-q { font-weight: 800; margin: 4px 0; }
 select.inp { width: 100%; border: 2px solid var(--line); background: #FFFDF9; border-radius: 14px; padding: 9px 12px; }
+
+/* ---------- two-language content ---------- */
+.bi-sub { display: block; font-size: .82em; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.opts button .bi-sub { font-size: 12px; }
+.en-label { color: #5B7CFA; }
+.en-field { background: #F6F8FF !important; }
+.opt-row .opt-en { background: #F6F8FF; }
+
+/* ---------- casual games ---------- */
+.game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.game-tile { border: 0; background: #fff; border-radius: 16px; padding: 12px 10px; text-align: center; box-shadow: 0 3px 0 rgba(58,46,63,.08); display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.game-tile:hover { box-shadow: 0 0 0 2px var(--primary), 0 3px 0 rgba(58,46,63,.08); }
+.game-tile .gt-icon { font-size: 36px; }
+.game-tile .muted { font-size: 12px; line-height: 1.35; }
+.game-stage { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.game-idle { font-size: 90px; text-align: center; padding: 30px 0; background: #fff; border-radius: 18px; }
+.mg-hud { display: flex; align-items: center; background: var(--ink); color: #fff; border-radius: 12px; padding: 6px 12px; font-size: 15px; }
+.mg-hud .mg-sp { flex: 1; }
+.mg-memory { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.mg-card { aspect-ratio: 1; border: 0; border-radius: 14px; font-size: 30px; position: relative; background: transparent; perspective: 400px; padding: 0; }
+.mg-card span { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 14px; backface-visibility: hidden; transition: transform .3s; }
+.mg-card .front { background: linear-gradient(135deg, #FF9FBF, #B07CFF); color: #fff; font-weight: 800; font-size: 24px; }
+.mg-card .back { background: #fff; transform: rotateY(180deg); box-shadow: inset 0 0 0 2px var(--line); }
+.mg-card.up .front { transform: rotateY(180deg); }
+.mg-card.up .back { transform: rotateY(360deg); }
+.mg-card.ok .back { box-shadow: inset 0 0 0 3px #7ED957; background: #EFFFEA; }
+.mg-whack { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #9BD98A; padding: 14px; border-radius: 18px; }
+.mg-hole { aspect-ratio: 1; border: 0; border-radius: 50%; background: radial-gradient(ellipse at 50% 70%, #5A3825 55%, #7A4B2E 56%); position: relative; overflow: hidden; touch-action: manipulation; }
+.mg-critter { position: absolute; left: 0; right: 0; bottom: -60%; font-size: 40px; text-align: center; transition: bottom .12s; pointer-events: none; }
+.mg-hole.up .mg-critter { bottom: 14%; }
+.mg-hole.hit { box-shadow: 0 0 0 4px #FFE066; }
+.mg-hole.boom { box-shadow: 0 0 0 4px #FF5E5E; }
+.mg-cat { width: 100%; aspect-ratio: 1; border-radius: 16px; touch-action: none; }
+.mg-pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 46px); gap: 6px; justify-content: center; }
+.mg-pad button { border: 0; border-radius: 12px; background: #fff; font-size: 20px; box-shadow: 0 3px 0 rgba(0,0,0,.12); touch-action: manipulation; }
+.mg-pad .mg-pad-up { grid-column: 2; grid-row: 1; } .mg-pad .mg-pad-left { grid-column: 1; grid-row: 2; }
+.mg-pad .mg-pad-down { grid-column: 2; grid-row: 2; } .mg-pad .mg-pad-right { grid-column: 3; grid-row: 2; }
+.mg-slice { width: 100%; aspect-ratio: 34 / 42; border-radius: 18px; touch-action: none; cursor: crosshair; }
+
+/* ---------- PK ---------- */
+.pk-record { display: flex; gap: 8px; margin-bottom: 10px; }
+.pk-record div { flex: 1; background: #fff; border-radius: 14px; text-align: center; padding: 8px; font-weight: 700; color: var(--muted); }
+.pk-record b { display: block; font-size: 24px; color: var(--ink); }
+.pk-row { display: flex; gap: 10px; align-items: center; background: #fff; border-radius: 14px; padding: 8px 10px; margin-bottom: 6px; }
+.pk-row.in { background: #FFF0F4; box-shadow: 0 0 0 2px #FFD1E0; }
+.pk-av { width: 40px; height: 40px; border-radius: 12px; background: #DDF4FF; flex: none; }
+.pk-score { display: flex; justify-content: center; align-items: center; gap: 16px; margin: 10px 0; }
+.pk-score > div { text-align: center; }
+.pk-score img { width: 56px; height: 56px; border-radius: 16px; background: #DDF4FF; display: block; margin: 0 auto 4px; }
+.pk-score b { font-size: 26px; }
+.pk-vs { font-weight: 900; font-size: 22px; color: var(--primary); }
+
+/* ---------- chat photos & emoji picker ---------- */
+.chat-photo, .msg img.chat-photo { display: block; width: auto; height: auto; max-width: min(220px, 100%); max-height: 220px; background: none; border-radius: 12px; margin: 4px 0; cursor: zoom-in; object-fit: cover; }
+.emote-pop { width: min(320px, calc(100vw - 30px)); max-height: 300px; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; flex-direction: column; flex-wrap: nowrap; }
+.emote-pop .pop-title { font-size: 12px; font-weight: 800; color: var(--muted); padding: 4px 6px 2px; }
+.emote-pop .pop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
+.emote-pop .pop-grid button { width: auto; height: 36px; font-size: 22px; }
+
+/* keep the chat bar (and its emoji picker) above open panels */
+.bottom { z-index: 11; }

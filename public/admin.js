@@ -110,33 +110,33 @@
     events: {
       icon: '📍',
       fields: [
-        { k: 'title', l: 'ad.f.title', t: 'text' }, { k: 'tbc', l: 'ad.f.tbc', t: 'tbc', def: false }, { k: 'date', l: 'ad.f.date', t: 'datetime' }, { k: 'endDate', l: 'ad.f.endDate', t: 'datetime' },
+        { k: 'title', l: 'ad.f.title', t: 'text' }, { k: 'titleEn', l: 'ad.f.title', t: 'text', en: true }, { k: 'tbc', l: 'ad.f.tbc', t: 'tbc', def: false }, { k: 'date', l: 'ad.f.date', t: 'datetime' }, { k: 'endDate', l: 'ad.f.endDate', t: 'datetime' },
         { k: 'fee', l: 'ad.f.fee', t: 'number', def: 0, step: '0.01' }, { k: 'capacity', l: 'ad.f.capacity', t: 'number', def: 0 },
         { k: 'payDeadline', l: 'ad.f.payDeadline', t: 'datetime' }, { k: 'payInfo', l: 'ad.f.payInfo', t: 'textarea', rows: 2 }, { k: 'qrFile', l: 'ad.f.qr', t: 'qr' },
-        { k: 'venue', l: 'ad.f.venue', t: 'text' }, { k: 'address', l: 'ad.f.address', t: 'text' }, { k: 'content', l: 'ad.f.content', t: 'textarea' },
-        { k: 'record', l: 'ad.f.record', t: 'textarea' },
+        { k: 'venue', l: 'ad.f.venue', t: 'text' }, { k: 'address', l: 'ad.f.address', t: 'text' }, { k: 'content', l: 'ad.f.content', t: 'textarea' }, { k: 'contentEn', l: 'ad.f.content', t: 'textarea', en: true },
+        { k: 'record', l: 'ad.f.record', t: 'textarea' }, { k: 'recordEn', l: 'ad.f.record', t: 'textarea', en: true },
       ],
       cols: [['title', 'ad.h.event'], ['date', 'ad.h.time', (v, it) => (it.tbc ? '✨ ' + t('ad.tbc') : fmt(v))], ['fee', 'ad.h.fee', (v) => (Number(v) > 0 ? cur() + ' ' + money(v) : t('ad.free'))],
         ['attendees', 'ad.h.attendees', (v, it) => attSummaryShort(it)], ['updatedAt', 'ad.h.updated', (v) => (v ? ago(v) : '—')]],
     },
     polls: {
       icon: '🗳️',
-      fields: [{ k: 'question', l: 'ad.f.pollQ', t: 'textarea' }, { k: 'options', l: 'ad.f.pollOptions', t: 'pollopts' }, { k: 'closesAt', l: 'ad.f.closesAt', t: 'datetime' }],
+      fields: [{ k: 'question', l: 'ad.f.pollQ', t: 'textarea' }, { k: 'questionEn', l: 'ad.f.pollQ', t: 'textarea', en: true, rows: 2 }, { k: 'options', l: 'ad.f.pollOptions', t: 'pollopts' }, { k: 'closesAt', l: 'ad.f.closesAt', t: 'datetime' }],
       cols: [['question', 'ad.h.question'], ['counts', 'ad.h.votes', (v, it) => it.options.map((o, i) => `${o}: ${v[i]}`).join('\n')], ['closesAt', 'ad.f.closesAt', (v) => (v ? fmt(v) : '—')]],
     },
     quiz: {
       icon: '❓',
-      fields: [{ k: 'question', l: 'ad.f.question', t: 'textarea' }, { k: 'options', l: 'ad.f.options', t: 'options' }, { k: 'points', l: 'ad.f.points', t: 'number', def: 10 }],
+      fields: [{ k: 'question', l: 'ad.f.question', t: 'textarea' }, { k: 'questionEn', l: 'ad.f.question', t: 'textarea', en: true, rows: 2 }, { k: 'options', l: 'ad.f.options', t: 'options' }, { k: 'points', l: 'ad.f.points', t: 'number', def: 10 }],
       cols: [['question', 'ad.h.question'], ['options', 'ad.h.answer', (v, it) => v[it.answer]], ['points', 'ad.h.points']],
     },
     riddles: {
       icon: '🧩',
-      fields: [{ k: 'question', l: 'ad.f.riddleQ', t: 'textarea' }, { k: 'answer', l: 'ad.f.riddleA', t: 'text' }, { k: 'hint', l: 'ad.f.hint', t: 'text' }, { k: 'points', l: 'ad.f.points', t: 'number', def: 15 }],
+      fields: [{ k: 'question', l: 'ad.f.riddleQ', t: 'textarea' }, { k: 'questionEn', l: 'ad.f.riddleQ', t: 'textarea', en: true, rows: 2 }, { k: 'answer', l: 'ad.f.riddleA', t: 'text' }, { k: 'hint', l: 'ad.f.hint', t: 'text' }, { k: 'hintEn', l: 'ad.f.hint', t: 'text', en: true }, { k: 'points', l: 'ad.f.points', t: 'number', def: 15 }],
       cols: [['question', 'ad.h.riddle'], ['answer', 'ad.h.riddleA'], ['points', 'ad.h.points']],
     },
     challenges: {
       icon: '🏅',
-      fields: [{ k: 'title', l: 'ad.f.chTitle', t: 'text' }, { k: 'description', l: 'ad.f.chDesc', t: 'textarea' }, { k: 'points', l: 'ad.f.points', t: 'number', def: 30 }, { k: 'active', l: 'ad.f.active', t: 'bool', def: true }],
+      fields: [{ k: 'title', l: 'ad.f.chTitle', t: 'text' }, { k: 'titleEn', l: 'ad.f.chTitle', t: 'text', en: true }, { k: 'description', l: 'ad.f.chDesc', t: 'textarea' }, { k: 'descriptionEn', l: 'ad.f.chDesc', t: 'textarea', en: true, rows: 2 }, { k: 'points', l: 'ad.f.points', t: 'number', def: 30 }, { k: 'active', l: 'ad.f.active', t: 'bool', def: true }],
       cols: [['title', 'ad.h.challenge'], ['points', 'ad.h.points'], ['active', 'ad.h.status', (v) => (v !== false ? t('ad.open') : t('ad.closed'))]],
     },
   };
@@ -224,7 +224,7 @@
     for (const f of S.fields) {
       const v = it ? it[f.k] : f.def;
       let input;
-      if (f.t === 'textarea') input = el('textarea', { class: 'inp', rows: f.rows || 4, value: v || '' });
+      if (f.t === 'textarea') input = el('textarea', { class: 'inp' + (f.en ? ' en-field' : ''), rows: f.rows || (f.en ? 2 : 4), value: v || '', placeholder: f.en ? t('ad.enPh') : '' });
       else if (f.t === 'qr') {
         const preview = el('img', { class: 'qr-preview' + (v ? '' : ' hidden'), src: v ? fileUrl(v) : '', alt: '' });
         const fileIn = el('input', { type: 'file', accept: 'image/*', class: 'hidden' });
@@ -239,24 +239,26 @@
         removeBtn.onclick = () => { input.state = { image: null, remove: true }; preview.classList.add('hidden'); removeBtn.classList.add('hidden'); };
       }
       else if (f.t === 'pollopts') {
-        const opts = (it && it.options) || ['', '', '', ''];
+        const opts = (it && it.options) || ['', '', '', ''], optsEn = (it && it.optionsEn) || [];
         input = el('div', {}, [0, 1, 2, 3, 4, 5].map((i) => el('div', { class: 'opt-row' }, el('b', {}, String(i + 1)),
-          el('input', { class: 'inp', value: opts[i] || '', placeholder: i < 2 ? t('ad.f.optReq') : t('ad.f.optOpt') }))));
+          el('input', { class: 'inp opt-zh', value: opts[i] || '', placeholder: i < 2 ? t('ad.f.optReq') : t('ad.f.optOpt') }),
+          el('input', { class: 'inp opt-en', value: optsEn[i] || '', placeholder: 'English' }))));
       }
       else if (f.t === 'datetime') input = el('input', { class: 'inp', type: 'datetime-local', value: toLocalInput(v) });
       else if (f.t === 'number') input = el('input', { class: 'inp', type: 'number', min: 0, step: f.step || '1', value: v ?? 0 });
       else if (f.t === 'bool') input = el('select', { class: 'inp' }, el('option', { value: 'true', selected: v !== false }, t('ad.open')), el('option', { value: 'false', selected: v === false }, t('ad.closed')));
       else if (f.t === 'tbc') input = el('select', { class: 'inp' }, el('option', { value: 'false', selected: !v }, t('ad.tbcNo')), el('option', { value: 'true', selected: !!v }, t('ad.tbcYes')));
       else if (f.t === 'options') {
-        const opts = (it && it.options) || ['', '', '', ''];
+        const opts = (it && it.options) || ['', '', '', ''], optsEn = (it && it.optionsEn) || [];
         const ans = it ? it.answer : 0;
         input = el('div', {}, [0, 1, 2, 3].map((i) => el('div', { class: 'opt-row' },
           el('input', { type: 'radio', name: 'ans', value: i, checked: i === ans }),
           el('b', {}, 'ABCD'[i]),
-          el('input', { class: 'inp', value: opts[i] || '', placeholder: i < 2 ? t('ad.f.optReq') : t('ad.f.optOpt') }))));
-      } else input = el('input', { class: 'inp', value: v || '' });
+          el('input', { class: 'inp opt-zh', value: opts[i] || '', placeholder: i < 2 ? t('ad.f.optReq') : t('ad.f.optOpt') }),
+          el('input', { class: 'inp opt-en', value: optsEn[i] || '', placeholder: 'English' }))));
+      } else input = el('input', { class: 'inp' + (f.en ? ' en-field' : ''), value: v || '', placeholder: f.en ? t('ad.enPh') : '' });
       inputs[f.k] = { f, input };
-      form.append(el('label', {}, t(f.l, { cur: cur() })), input);
+      form.append(el('label', { class: f.en ? 'en-label' : '' }, f.en ? '🇬🇧 ' + t(f.l, { cur: cur() }).replace(/\s*\*\s*$/, '').replace(/ \*/, '') + ' · English' : t(f.l, { cur: cur() })), input);
     }
     const err = el('p', { class: 'err' });
     form.append(err, el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' },
@@ -269,13 +271,19 @@
           else if (f.t === 'number') item[k] = Number(input.value);
           else if (f.t === 'bool' || f.t === 'tbc') item[k] = input.value === 'true';
           else if (f.t === 'qr') { if (input.state.image) item.qrImage = input.state.image; if (input.state.remove) item.removeQr = true; }
-          else if (f.t === 'pollopts') item.options = [...input.querySelectorAll('.inp')].map((x) => x.value.trim()).filter(Boolean);
+          else if (f.t === 'pollopts') {
+            const zh = [...input.querySelectorAll('.opt-zh')].map((x) => x.value.trim()), en = [...input.querySelectorAll('.opt-en')].map((x) => x.value.trim());
+            const keep = zh.map((tx, i) => i).filter((i) => zh[i]);
+            item.options = keep.map((i) => zh[i]); item.optionsEn = keep.map((i) => en[i] || '');
+          }
           else if (f.t === 'options') {
-            const texts = [...input.querySelectorAll('.inp')].map((x) => x.value.trim());
+            const texts = [...input.querySelectorAll('.opt-zh')].map((x) => x.value.trim());
+            const textsEn = [...input.querySelectorAll('.opt-en')].map((x) => x.value.trim());
             const chosen = Number((input.querySelector('input[type=radio]:checked') || {}).value || 0);
             if (!texts[chosen]) { err.textContent = t('ad.f.ansBlank'); return; }
             const kept = texts.map((tx, i) => ({ tx, i })).filter((x) => x.tx);
             item.options = kept.map((x) => x.tx);
+            item.optionsEn = kept.map((x) => textsEn[x.i] || '');
             item.answer = kept.findIndex((x) => x.i === chosen);
           } else item[k] = input.value;
         }
@@ -496,15 +504,16 @@
 
   function renderAnnounce() {
     const ta = el('textarea', { class: 'inp', rows: 3, maxLength: 300, placeholder: t('ad.announcePh') });
+    const taEn = el('textarea', { class: 'inp en-field', rows: 2, maxLength: 300, placeholder: '🇬🇧 ' + t('ad.enPh'), style: 'margin-top:6px' });
     return el('div', {},
       el('div', { class: 'toolbar' }, el('h2', {}, t('ad.announceTitle'))),
-      el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin-top:0' }, t('ad.announceHint')), ta,
+      el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin-top:0' }, t('ad.announceHint')), ta, taEn,
         el('button', { class: 'btn primary', style: 'margin-top:8px', onclick: async () => {
           if (!ta.value.trim()) return;
-          try { await api('POST', '/api/admin/announce', { text: ta.value }); toast(t('ad.published'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
+          try { await api('POST', '/api/admin/announce', { text: ta.value, textEn: taEn.value }); toast(t('ad.published'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
         } }, t('ad.publish'))),
       data.announcements.map((a) => el('div', { class: 'card', style: 'display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap' },
-        el('div', { style: 'flex:1;min-width:200px' }, a.text, el('div', { class: 'muted' }, fmt(a.createdAt))),
+        el('div', { style: 'flex:1;min-width:200px' }, a.text, a.textEn ? el('div', { class: 'muted' }, '🇬🇧 ' + a.textEn) : null, el('div', { class: 'muted' }, fmt(a.createdAt))),
         el('button', { class: 'btn small blue', onclick: () => editAnnounce(a) }, t('ad.edit')),
         el('button', { class: 'btn small ghost', onclick: async () => {
           if (!await askConfirm(t('ad.confirmDelete', { name: a.text.slice(0, 30) }), true)) return;
@@ -513,11 +522,12 @@
   }
   function editAnnounce(a) {
     const ta = el('textarea', { class: 'inp', rows: 4, maxLength: 300, value: a.text });
-    openModal(el('div', { class: 'form' }, el('h2', { style: 'margin:0 0 8px' }, t('ad.editAnnounce')), ta,
+    const taEn = el('textarea', { class: 'inp en-field', rows: 3, maxLength: 300, value: a.textEn || '', placeholder: '🇬🇧 ' + t('ad.enPh'), style: 'margin-top:6px' });
+    openModal(el('div', { class: 'form' }, el('h2', { style: 'margin:0 0 8px' }, t('ad.editAnnounce')), ta, taEn,
       el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;margin-top:10px' },
         el('button', { class: 'btn ghost', onclick: closeModal }, t('ad.cancel')),
         el('button', { class: 'btn primary', onclick: async () => {
-          try { await api('POST', '/api/admin/announce', { id: a.id, text: ta.value }); closeModal(); toast(t('ad.saved'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
+          try { await api('POST', '/api/admin/announce', { id: a.id, text: ta.value, textEn: taEn.value }); closeModal(); toast(t('ad.saved'), 'good'); load(); } catch (e) { toast(e.message, 'bad'); }
         } }, t('ad.save')))));
   }
 
