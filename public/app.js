@@ -104,7 +104,7 @@
     return season();
   }
   const trackName = (k) => (['arcade', 'battle', 'cafe'].includes(k) ? t('music.track.' + k) : t('season.' + k));
-  function syncMusic() { if (musicOn && !$('#town').classList.contains('hidden')) Season.Music.play(musicTrack()); else Season.Music.stop(); }
+  function syncMusic() { if (musicOn && !themeOpen && !$('#town').classList.contains('hidden')) Season.Music.play(musicTrack()); else Season.Music.stop(); }
   const firstGesture = () => { window.removeEventListener('pointerdown', firstGesture, true); window.removeEventListener('keydown', firstGesture, true); syncMusic(); };
   window.addEventListener('pointerdown', firstGesture, true);
   window.addEventListener('keydown', firstGesture, true);
@@ -298,6 +298,7 @@
     resize();
     syncMusic();
     if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
+    mountThemeBar();
     if (!store.get('lp258_tip')) { store.set('lp258_tip', '1'); setTimeout(() => toast(t('tip.move'), 'info', 6500), 800); }
     if (state.me && !state.me.hasPin) setTimeout(() => openPinSetup(true), 1200);
     else if (state.me && !state.me.hasRecovery) setTimeout(() => openRecoverySetup(true), 1500);
@@ -457,7 +458,7 @@
     on('notice', (d) => { const s = msgText(d); toast(s, 'info', 8000); notify(s); logLine(el('div', { class: 'sys' }, s)); });
     on('live', (d) => openLive(d));
     on('chatRemoved', (d) => { state.chat = state.chat.filter((m) => m.id !== d.id); if (currentPanel === 'chat') renderPanel(); });
-    on('settings', (d) => { const before = season(); state.settings = d; updateSeasonUi(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) syncMusic(); } });
+    on('settings', (d) => { const before = season(); const songBefore = state.settings && state.settings.themeUrl; state.settings = d; updateSeasonUi(); if (d.themeUrl !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); if (season() !== before) { toast(Season.ICON[season()] + ' ' + t('season.changed', { name: t('season.' + season()) }), 'info'); if (Season.Music.playing) syncMusic(); } });
     on('liveCount', (d) => { if (state.live) { state.live.count = d.count; const c = $('#liveCount'); if (c) c.textContent = t('live.count', { n: d.count }); } });
     on('liveResult', showLiveResult);
     on('kicked', (d) => { es.close(); logout(t('kicked.' + (d.key || 'banned'))); });
@@ -482,7 +483,7 @@
       const pkIn = (state.content.pk && state.content.pk.incoming.length) || 0;
       const gb = document.querySelector('.nav button[data-panel=games]');
       if (gb) { let b = gb.querySelector('.badge'); if (!b) { b = el('b', { class: 'badge' }); gb.append(b); } b.textContent = pkIn; b.classList.toggle('hidden', !pkIn); }
-      if (state.content.settings) { state.settings = state.content.settings; updateSeasonUi(); }
+      if (state.content.settings) { const songBefore = state.settings && state.settings.themeUrl; state.settings = state.content.settings; updateSeasonUi(); if (state.settings.themeUrl !== songBefore || !document.getElementById('themeBar')) mountThemeBar(); }
       checkReminders();
       if (currentPanel && !['chat', 'me'].includes(currentPanel) && !(currentPanel === 'games' && (gameRunning || liveRoom))) renderPanel();
     } catch (e) { if (e.status === 401) logout(t('err.relogin')); }
@@ -494,19 +495,19 @@
   }
 
   let tickerIdx = 0;
+  // announcements scroll across the bar like a news ticker (newest first); tap it to open HQ
   function renderTicker() {
-    const list = state.announcements.slice(-5);
+    const list = state.announcements.slice(-5).reverse();
     const tx = $('#tickerText');
-    if (!list.length) { tx.textContent = t('ticker.default'); return; }
-    tickerIdx = list.length - 1;
-    tx.textContent = pickLang(list[tickerIdx].text, list[tickerIdx].textEn);
+    const text = list.length ? list.map((a) => pickLang(a.text, a.textEn)).join('　　✦　　') : t('ticker.default');
+    const track = el('span', { class: 'ticker-track' }, text);
+    tx.replaceChildren(track);
+    requestAnimationFrame(() => {
+      const px = track.scrollWidth + tx.clientWidth;
+      track.style.animationDuration = Math.max(8, px / 55) + 's'; // about 55 px a second
+    });
   }
-  setInterval(() => {
-    const list = state.announcements.slice(-5);
-    if (list.length < 2) return;
-    tickerIdx = (tickerIdx + 1) % list.length;
-    $('#tickerText').textContent = pickLang(list[tickerIdx].text, list[tickerIdx].textEn);
-  }, 7000);
+  $('#ticker').onclick = () => openPanel('hq');
 
   // ============================================================ chat
   function addChat(m) {
@@ -1553,10 +1554,156 @@
     if (p.game === 'quiz') runQuizDuel(box, p.quiz || [], (answers) => submit({ answers }));
     else runGame(box, p.game, p.seed, (score) => submit({ score }));
   }
+  function youtubeId(url) {
+    try {
+      const u = new URL(url);
+      if (/(^|\.)youtu\.be$/.test(u.hostname)) return u.pathname.slice(1).split('/')[0] || null;
+      if (/(^|\.)youtube(-nocookie)?\.com$/.test(u.hostname)) {
+        if (u.searchParams.get('v')) return u.searchParams.get('v');
+        const m = u.pathname.match(/^\/(embed|shorts|live)\/([\w-]{6,})/);
+        if (m) return m[2];
+      }
+    } catch {}
+    return null;
+  }
+  // Theme song: YouTube's own player, prepared in the background as soon as the 🎵 bar is shown,
+  // so one tap on the bar starts the song straight away (no second tap on YouTube's ▶).
+  let themeOpen = false, yt = null, ytReady = false, ytId = null, ytApi = null;
+  function loadYT() {
+    if (ytApi) return ytApi;
+    ytApi = new Promise((resolve) => {
+      if (window.YT && window.YT.Player) return resolve();
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (prev) prev(); resolve(); };
+      document.head.append(el('script', { src: 'https://www.youtube.com/iframe_api', async: true }));
+    });
+    return ytApi;
+  }
+  function themeBox() {
+    let box = document.getElementById('themePlayer');
+    if (box) return box;
+    const s = state.settings || {};
+    box = el('div', { class: 'theme-player tp-standby', id: 'themePlayer' },
+      el('div', { class: 'tp-head' },
+        el('span', {}, '🎵 ', el('b', { id: 'tpTitle' }, s.themeTitle || t('theme.title'))),
+        el('button', { class: 'tp-close', title: t('close'), onclick: closeThemePlayer }, '✕')),
+      el('div', { class: 'tp-video' }, el('div', { id: 'tpFrame' }), el('div', { class: 'tp-hint hidden', id: 'tpHint' }, t('theme.tapHint'))));
+    document.body.append(box);
+    return box;
+  }
+  function prepareTheme() {
+    const s = state.settings || {};
+    const id = youtubeId(s.themeUrl || '');
+    if (!id || (yt && ytId === id)) return;
+    if (yt) { try { yt.destroy(); } catch {} yt = null; ytReady = false; }
+    ytId = id;
+    themeBox();
+    loadYT().then(() => {
+      if (ytId !== id || yt) return;
+      yt = new YT.Player('tpFrame', {
+        videoId: id, host: 'https://www.youtube-nocookie.com', width: '100%', height: '100%',
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
+        events: {
+          onReady: () => { ytReady = true; },
+          onStateChange: (e) => {
+            if (e.data === YT.PlayerState.PLAYING) { $('#tpHint').classList.add('hidden'); if (!themeOpen) { themeOpen = true; syncMusic(); } }
+          },
+        },
+      });
+    });
+  }
+  function openThemePlayer() {
+    const s = state.settings || {};
+    const id = youtubeId(s.themeUrl || '');
+    if (!id) { window.open(s.themeUrl, '_blank', 'noopener'); return; } // not a YouTube link: open it instead
+    const box = themeBox();
+    $('#tpTitle').textContent = s.themeTitle || t('theme.title');
+    box.classList.remove('tp-standby');
+    themeOpen = true;
+    syncMusic(); // pause the town music while the theme song plays
+    if (yt && ytReady && ytId === id) {
+      try { yt.unMute(); yt.setVolume(100); yt.seekTo(0, true); yt.playVideo(); } catch {}
+    } else {
+      // player not prepared yet (slow connection): start it as soon as it is
+      prepareTheme();
+      const wait = setInterval(() => { if (yt && ytReady) { clearInterval(wait); try { yt.playVideo(); } catch {} } }, 200);
+      setTimeout(() => clearInterval(wait), 15000);
+    }
+    // if the phone still blocked it (some iPhones), show a small hint to tap the video once
+    setTimeout(() => { try { if (themeOpen && yt && yt.getPlayerState && yt.getPlayerState() !== YT.PlayerState.PLAYING && yt.getPlayerState() !== YT.PlayerState.BUFFERING) $('#tpHint').classList.remove('hidden'); } catch {} }, 2500);
+  }
+  function closeThemePlayer() {
+    const box = document.getElementById('themePlayer');
+    if (box) box.classList.add('tp-standby');
+    try { if (yt) yt.pauseVideo(); } catch {}
+    if (themeOpen) { themeOpen = false; syncMusic(); }
+  }
+  // ---------- theme song bar on the main town page (Spotify's own player: tap ▶, no video)
+  function spotifyUri(url) {
+    try {
+      const u = new URL(url);
+      if (!/(^|\.)spotify\.com$/.test(u.hostname)) return null;
+      const m = u.pathname.match(/\/(track|album|playlist|episode)\/([A-Za-z0-9]{10,})/);
+      return m ? `spotify:${m[1]}:${m[2]}` : null;
+    } catch { return null; }
+  }
+  let spotifyCtl = null, spotifyUriNow = null, spotifyPlaying = false;
+  // Spotify's player tells the page when it plays or pauses; use that to pause / resume the town music
+  window.addEventListener('message', (e) => {
+    if (e.origin !== 'https://open.spotify.com') return;
+    let d = e.data;
+    try { if (typeof d === 'string') d = JSON.parse(d); } catch { return; }
+    if (d && d.type === 'playback_update' && d.payload) setThemePlaying(!d.payload.isPaused && !(d.payload.duration && d.payload.position >= d.payload.duration));
+  });
+  function setThemePlaying(on) {
+    if (spotifyPlaying === on) return;
+    spotifyPlaying = on;
+    themeOpen = on || !!(document.getElementById('themePlayer') && !document.getElementById('themePlayer').classList.contains('tp-standby'));
+    syncMusic();
+    const pill = document.querySelector('#themeBar .tb-pill');
+    if (pill) pill.firstChild.textContent = on ? '🔊 ' : '🎵 ';
+  }
+  // The player is never moved once created (moving an embedded player restarts it), so shrinking the bar
+  // only hides it visually and the song keeps playing.
+  function mountThemeBar() {
+    const s = state.settings || {};
+    const uri = spotifyUri(s.themeUrl || ''), yid = youtubeId(s.themeUrl || '');
+    let bar = document.getElementById('themeBar');
+    if (!s.themeUrl || (!uri && !yid)) { if (bar) bar.remove(); spotifyCtl = null; spotifyUriNow = null; document.body.classList.remove('tb-open', 'tb-mini'); return; }
+    const key = uri || 'yt:' + yid;
+    if (!bar || bar.dataset.key !== key) {
+      if (bar) bar.remove();
+      spotifyCtl = null; spotifyUriNow = null;
+      const toggle = () => { store.set('lp258_themeMini', store.get('lp258_themeMini') === '1' ? '0' : '1'); applyThemeMini(); };
+      const host = el('div', { class: 'tb-host' + (uri ? '' : ' yt') });
+      bar = el('div', { class: 'theme-bar', id: 'themeBar', 'data-key': key },
+        el('button', { class: 'tb-pill', type: 'button', onclick: toggle }, el('span', {}, spotifyPlaying ? '🔊 ' : '🎵 '), el('span', { class: 'tb-pill-t' }, s.themeTitle || t('theme.title'))),
+        host,
+        el('button', { class: 'tb-min', type: 'button', title: t('theme.minimize'), onclick: toggle }, '–'));
+      $('#town').append(bar);
+      if (uri) {
+        const [, kind, id] = uri.split(':');
+        spotifyUriNow = uri;
+        host.append(el('iframe', { src: `https://open.spotify.com/embed/${kind}/${id}`, height: 80, allow: 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture', title: s.themeTitle || 'Spotify' }));
+      } else host.append(themeSong('on-page')); // a YouTube link: a button that opens the small YouTube player
+    }
+    const pt = bar.querySelector('.tb-pill-t');
+    if (pt) pt.textContent = s.themeTitle || t('theme.title');
+    applyThemeMini();
+  }
+  function applyThemeMini() {
+    const bar = document.getElementById('themeBar');
+    if (!bar) return;
+    const mini = store.get('lp258_themeMini') === '1';
+    bar.classList.toggle('mini', mini);
+    document.body.classList.toggle('tb-open', !mini);
+    document.body.classList.toggle('tb-mini', mini);
+  }
   function themeSong(cls = '') {
     const s = state.settings || {};
     if (!s.themeUrl) return null;
-    return el('a', { class: 'theme-song ' + cls, href: s.themeUrl, target: '_blank', rel: 'noopener noreferrer' },
+    setTimeout(prepareTheme, 0);
+    return el('button', { type: 'button', class: 'theme-song ' + cls, onclick: () => { if (cls === 'in-modal') closeModal(); openThemePlayer(); } },
       el('span', { class: 'ts-icon' }, '🎵'),
       el('span', { class: 'ts-text' }, el('small', {}, t('theme.label')), el('b', {}, s.themeTitle || '')),
       el('span', { class: 'ts-play' }, '▶'));
@@ -1574,7 +1721,6 @@
         el('div', { class: 'pk-vs' }, 'VS'),
         el('div', {}, el('img', { src: Avatar.thumb((mineFrom ? p.toAvatar : p.fromAvatar) || {}, 56), alt: '' }), el('b', {}, their), el('div', { class: 'muted' }, mineFrom ? p.toName : p.fromName))),
       el('p', { class: 'muted' }, res === 'win' ? t('pk.winPts') : res === 'tie' ? t('pk.tiePts') : t('pk.losePts')),
-      themeSong('in-modal'),
       el('button', { class: 'btn primary', onclick: closeModal }, t('ok'))));
   }
   function renderPK(c) {
@@ -1632,7 +1778,7 @@
   // ---------- rank
   let rankGame = 'stars';
   function renderRank(c) {
-    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['games', t('rank.games')], ['pk', t('rank.pk')]]), themeSong());
+    const wrap = el('div', {}, tabBar('rank', [['points', t('rank.points')], ['games', t('rank.games')], ['pk', t('rank.pk')]]));
     let list, value;
     if (tabs.rank === 'points') { list = c.leaderboard; value = (u) => `⭐ ${u.points}`; }
     else if (tabs.rank === 'pk') { list = c.pkBoard || []; value = (u) => t('rank.pkWins', { n: u.wins }); }

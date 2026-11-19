@@ -22,7 +22,7 @@ const PW_FILE = path.join(DATA_DIR, 'admin-password.txt');
 const TZ_OFFSET_H = Number.isFinite(Number(process.env.TZ_OFFSET_HOURS)) && process.env.TZ_OFFSET_HOURS !== undefined ? Number(process.env.TZ_OFFSET_HOURS) : 8;
 const WORLD = { w: 1600, h: 1020 };
 const SPAWN = { x: 800, y: 585 };
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 // English versions of the built-in sample content (matched by the Chinese text).
 const EN_SEED = {
   quiz: {
@@ -80,7 +80,7 @@ function localAt(days, h, m = 0) {
 function seedDb() {
   return {
     meta: { v: DB_VERSION },
-    settings: { season: 'auto', currency: 'RM', themeTitle: 'Eminem - Not Afraid', themeUrl: 'https://www.youtube.com/watch?v=j5-yKhDd64s' },
+    settings: { season: 'auto', currency: 'RM', themeTitle: 'Eminem - Not Afraid', themeUrl: 'https://open.spotify.com/track/7Ie9W94M7OjPoZVV216Xus' },
     users: {},
     events: [
       { id: uid(4), title: '冬日聚会 Winter Meetup', venue: 'LP 258 HQ', address: '（请在后台更新地址）', date: localAt(3, 19, 30), endDate: localAt(3, 22, 30),
@@ -158,6 +158,10 @@ function migrate(d) {
     d.games = d.games || { memory: {}, whack: {}, caterpillar: {} };
     d.pk = d.pk || [];
     d.meta.v = 4;
+  }
+  if (d.meta.v < 5) {
+    if (d.settings && (!d.settings.themeUrl || d.settings.themeUrl === 'https://www.youtube.com/watch?v=j5-yKhDd64s')) { d.settings.themeUrl = 'https://open.spotify.com/track/7Ie9W94M7OjPoZVV216Xus'; d.settings.themeTitle = d.settings.themeTitle || 'Eminem - Not Afraid'; }
+    d.meta.v = 5;
   }
   console.log('🔧 Upgraded data to version', DB_VERSION);
   return true;

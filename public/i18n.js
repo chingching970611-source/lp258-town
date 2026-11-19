@@ -205,8 +205,8 @@
     'pk.live': '⚡ 即时对战', 'pk.liveHint': '即时对战：对方在线就能一起玩，同时开始，一边玩一边看到对方的分数！', 'pk.inviting': '正在邀请 {name}…', 'pk.inviteWait': '等对方接受', 'pk.cancel': '取消',
     'pk.liveInvite': '{name} 邀请你即时 PK！', 'pk.lc.declined': '{name} 拒绝了即时 PK', 'pk.lc.timeout': '对方没有回应，邀请已取消', 'pk.lc.cancelled': '{name} 取消了即时 PK', 'pk.go': '开始！', 'pk.waitOpp': '等 {name} 玩完…',
     'err.pk_offline': '{name} 现在不在线 — 可以用「📨 发挑战」，对方上线再玩', 'err.pk_busy': '你或对方正在 PK 中，等一下再来',
-    'music.track.arcade': '游戏区', 'music.track.battle': '对战', 'music.track.cafe': '咖啡馆', 'theme.label': 'LP 258 主题曲 · 去 YouTube 听',
-    'ad.themeTitle': '🎵 LP 258 主题曲', 'ad.themeHint': '会显示在排行榜和 PK 结果。成员点一下就会打开这个链接（YouTube 等音乐网站），网站本身不会存放歌曲。', 'ad.themeName': '歌名', 'ad.themeTry': '试听', 'err.bad_theme_url': '链接要以 https:// 开头',
+    'music.track.arcade': '游戏区', 'music.track.battle': '对战', 'music.track.cafe': '咖啡馆', 'theme.label': 'LP 258 主题曲 · 点一下播放', 'theme.title': 'LP 258 主题曲', 'theme.tapHint': '点一下视频开始播放 ▶', 'theme.minimize': '收起',
+    'ad.themeTitle': '🎵 LP 258 主题曲', 'ad.themeHint': '会显示在小镇主页的音乐栏。贴 Spotify 歌曲链接（推荐，只有声音）或 YouTube 链接。登录了 Spotify 的成员可以听完整首歌，其他人试听 30 秒。网站本身不会存放歌曲。', 'ad.themeName': '歌名', 'ad.themeTry': '试听', 'err.bad_theme_url': '链接要以 https:// 开头',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 主持人后台', 'ad.only': '只限主持人 / 管理员登录', 'ad.pwPh': '管理员密码', 'ad.login': '登录',
     'ad.pwHint': '第一次启动时，密码会保存在服务器的 data/admin-password.txt。', 'ad.toTown': '🏡 去小镇', 'ad.refresh': '🔄 刷新', 'ad.logout': '退出',
@@ -452,8 +452,8 @@
     'pk.live': '⚡ Live battle', 'pk.liveHint': 'Live battle: if they’re online, you both start together and see each other’s score as you play!', 'pk.inviting': 'Inviting {name}…', 'pk.inviteWait': 'Waiting for them to accept', 'pk.cancel': 'Cancel',
     'pk.liveInvite': '{name} wants a live PK!', 'pk.lc.declined': '{name} declined the live PK', 'pk.lc.timeout': 'No answer — the invite was cancelled', 'pk.lc.cancelled': '{name} cancelled the live PK', 'pk.go': 'Go!', 'pk.waitOpp': 'Waiting for {name} to finish…',
     'err.pk_offline': '{name} isn’t online right now — use “📨 Send challenge” and they can play later', 'err.pk_busy': 'You or they are already in a PK — try again in a moment',
-    'music.track.arcade': 'Game Zone', 'music.track.battle': 'battle', 'music.track.cafe': 'café', 'theme.label': 'LP 258 theme song · listen on YouTube',
-    'ad.themeTitle': '🎵 LP 258 theme song', 'ad.themeHint': 'Shown on the leaderboard and PK results. Members tap it to open this link (YouTube or another music site) — the song itself isn’t stored on the site.', 'ad.themeName': 'Song title', 'ad.themeTry': 'Try it', 'err.bad_theme_url': 'The link must start with https://',
+    'music.track.arcade': 'Game Zone', 'music.track.battle': 'battle', 'music.track.cafe': 'café', 'theme.label': 'LP 258 theme song · tap to play', 'theme.title': 'LP 258 theme song', 'theme.tapHint': 'Tap the video to start ▶', 'theme.minimize': 'Minimise',
+    'ad.themeTitle': '🎵 LP 258 theme song', 'ad.themeHint': 'Shown in the music bar on the town’s main page. Paste a Spotify song link (recommended, sound only) or a YouTube link. Members signed in to Spotify hear the full song; others hear a 30-second preview. The song itself isn’t stored on the site.', 'ad.themeName': 'Song title', 'ad.themeTry': 'Try it', 'err.bad_theme_url': 'The link must start with https://',
     // ---------------- admin
     'ad.title': '🛠️ LP 258 Host Backend', 'ad.only': 'Hosts / admins only', 'ad.pwPh': 'Admin password', 'ad.login': 'Sign in',
     'ad.pwHint': "On first start, the password is saved on the server in data/admin-password.txt.", 'ad.toTown': '🏡 Open town', 'ad.refresh': '🔄 Refresh', 'ad.logout': 'Sign out',
