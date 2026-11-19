@@ -1661,15 +1661,28 @@
     if (p.duration) spDuration = p.duration;
     const atEnd = spDuration && (p.position >= spDuration - 400 || (p.isPaused && spLastPos >= spDuration - 1500));
     if (atEnd && themeLoop) { spLastPos = 0; setTimeout(() => spSend('play_from_start'), 150); return; } // repeat forever
-    if (p.isPaused && !atEnd && spotifyPlaying) themeLoop = false; // paused on Spotify's own button
+    if (p.isPaused && !atEnd && spotifyPlaying) { themeLoop = false; themeWanted = false; } // paused on Spotify's own button
     if (!p.isPaused) { spLastPos = p.position || 0; if (!themeLoop) themeLoop = true; }
     setThemePlaying(!p.isPaused && !atEnd);
   });
+  // The town music goes quiet as soon as the member asks for the theme song (tapping the button or the player),
+  // without waiting for the player to report back — some phones report late or not at all.
+  let themeWanted = false;
+  function updateThemeOpen() {
+    const yt = !!(document.getElementById('themePlayer') && !document.getElementById('themePlayer').classList.contains('tp-standby'));
+    const was = themeOpen;
+    themeOpen = spotifyPlaying || themeWanted || yt;
+    if (themeOpen !== was) syncMusic();
+  }
+  function setThemeWanted(on) { themeWanted = on; updateThemeOpen(); }
+  window.addEventListener('blur', () => { // a tap inside the theme player (it lives in its own frame)
+    setTimeout(() => { const a = document.activeElement; if (a && a.tagName === 'IFRAME' && a.closest && a.closest('#themeBar')) setThemeWanted(true); }, 0);
+  });
   function setThemePlaying(on) {
-    if (spotifyPlaying === on) return;
+    if (on) themeWanted = true;
+    if (spotifyPlaying === on) { updateThemeOpen(); return; }
     spotifyPlaying = on;
-    themeOpen = on || !!(document.getElementById('themePlayer') && !document.getElementById('themePlayer').classList.contains('tp-standby'));
-    syncMusic();
+    updateThemeOpen();
     renderThemeState();
   }
   function renderThemeState() {
@@ -1685,13 +1698,14 @@
   // the host's own uploaded song (full length, members only): a plain audio player that repeats forever
   let themeAudioEl = null;
   function themePlay() {
+    setThemeWanted(true);
     if (themeAudioEl) { themeAudioEl.currentTime = 0; const p = themeAudioEl.play(); if (p && p.catch) p.catch(() => toast(t('theme.tapAgain'), 'info')); return; }
     themeLoop = true; spLastPos = 0; spSend('play_from_start');
   }
   function themeStop() {
     if (themeAudioEl) themeAudioEl.pause();
     else { themeLoop = false; spSend('pause'); }
-    themeExpanded = false; setThemePlaying(false); renderThemeState();
+    themeExpanded = false; themeWanted = false; setThemePlaying(false); updateThemeOpen(); renderThemeState();
   }
   const themeKeyOf = (s) => (s && s.themeAudio ? 'mp3:' + s.themeAudio.at : (s && s.themeUrl) || '');
   function mountThemeBar() {
@@ -1725,7 +1739,7 @@
         themeAudioEl = el('audio', { controls: '', loop: '', preload: 'none', controlsList: 'nodownload', src: `/api/theme-audio?t=${encodeURIComponent(state.token)}&v=${s.themeAudio.at}` });
         themeAudioEl.loop = true; themeAudioEl.controls = true; // repeat forever
         themeAudioEl.addEventListener('play', () => setThemePlaying(true));
-        themeAudioEl.addEventListener('pause', () => setThemePlaying(false));
+        themeAudioEl.addEventListener('pause', () => { themeWanted = false; setThemePlaying(false); });
         themeAudioEl.addEventListener('contextmenu', (e) => e.preventDefault());
         host.append(themeAudioEl);
       } else if (uri) {
